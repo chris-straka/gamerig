@@ -412,13 +412,92 @@ def clear_skin(obj):
     obj.vertex_groups.clear()
 
 
-def heat_bind(mesh_obj, rig):
+# Bone heat has fixed tolerances: on a figure about a metre tall it can
+# find no solution for any bone (nothing bound); the same figure at ten
+# times the size binds. Weights don't depend on size, so heat binds at
+# HEAT_SCALE and the rig goes back to its size after.
+HEAT_SCALE = 10.0
+
+
+def _parent(mesh_obj, rig, kind, scale=1.0):
     bpy.ops.object.mode_set(mode="OBJECT")
+    up = Matrix.Scale(scale, 4)
+    mw = mesh_obj.matrix_world.copy()
+    if scale != 1.0:
+        mesh_obj.parent = None
+        mesh_obj.matrix_world = up @ mw
+        rig.matrix_world = up @ rig.matrix_world
+        bpy.context.view_layer.update()
     bpy.ops.object.select_all(action="DESELECT")
     mesh_obj.select_set(True)
     rig.select_set(True)
     bpy.context.view_layer.objects.active = rig
-    bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+    try:
+        bpy.ops.object.parent_set(type=kind)
+    finally:
+        if scale != 1.0:
+            rig.matrix_world = up.inverted() @ rig.matrix_world
+            bpy.context.view_layer.update()
+            if mesh_obj.parent is not rig:
+                mesh_obj.matrix_world = mw
+
+
+def heat_bind(mesh_obj, rig):
+    _parent(mesh_obj, rig, "ARMATURE_AUTO", HEAT_SCALE)
+
+
+def heat_bind_joined(mesh_obj, rig):
+    """Heat on a copy of the mesh with split vertices joined, the weights
+    copied back to each vertex from the copy's vertex at its position.
+
+    An imported mesh is split at every UV seam and hard edge (a 3.7k-vertex
+    body comes in as 10k+ vertices in islands), and bone heat finds no
+    solution over the pieces. Returns False, leaving the mesh untouched,
+    when there is nothing to join or the copy binds nothing.
+    """
+    import bmesh
+
+    copy = mesh_obj.copy()
+    copy.data = mesh_obj.data.copy()
+    copy.modifiers.clear()
+    copy.vertex_groups.clear()
+    bpy.context.scene.collection.objects.link(copy)
+    try:
+        bm = bmesh.new()
+        bm.from_mesh(copy.data)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+        bm.to_mesh(copy.data)
+        bm.free()
+        if len(copy.data.vertices) == len(mesh_obj.data.vertices):
+            return False
+        heat_bind(copy, rig)
+        if count_usable(copy) == 0:
+            return False
+        _parent(mesh_obj, rig, "ARMATURE_NAME")
+        kd = KDTree(len(copy.data.vertices))
+        for v in copy.data.vertices:
+            kd.insert(v.co, v.index)
+        kd.balance()
+        names = [g.name for g in copy.vertex_groups]
+        groups = {
+            n: mesh_obj.vertex_groups.get(n) or mesh_obj.vertex_groups.new(name=n)
+            for n in names
+        }
+        cverts = copy.data.vertices
+        for v in mesh_obj.data.vertices:
+            _, i, _ = kd.find(v.co)
+            for el in cverts[i].groups:
+                if el.weight > MIN_INFLUENCE:
+                    groups[names[el.group]].add([v.index], el.weight, "REPLACE")
+        print(
+            f"[auto_rig] bind: heat on {mesh_obj.name} with split vertices joined "
+            f"({len(mesh_obj.data.vertices)} -> {len(cverts)}), weights copied back"
+        )
+        return True
+    finally:
+        mesh = copy.data
+        bpy.data.objects.remove(copy)
+        bpy.data.meshes.remove(mesh)
 
 
 def transfer_weights(src, dst):
@@ -462,7 +541,8 @@ def stage_bind(rig, subject_name, envelope_name):
     if subject is None or subject.type != "MESH":
         raise StageFail("bind", f"subject mesh {subject_name!r} lost after generate")
     try:
-        heat_bind(subject, rig)
+        if not heat_bind_joined(subject, rig):
+            heat_bind(subject, rig)
     except RuntimeError as e:
         print(f"[auto_rig] bind: direct heat raised, trying envelope: {e}")
         clear_skin(subject)
