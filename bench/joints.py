@@ -5,7 +5,7 @@
     python3 bench/joints.py [--tag NAME] [--only a,b]
 
 Inputs: the shared CC0 corpus (8 MPFB2 characters in clothes, varied body
-types, 3k-21k verts; ~/Games/_blender/weightforge/bench/corpus/fetch.sh puts
+types, 3k-21k verts; ~/Games/_blender/meshweights/bench/corpus/fetch.sh puts
 them in $FORGE_BENCH/corpus). Each comes with MPFB2's own skeleton, fitted
 to that body by MakeHuman: the ground truth for where joints belong.
 

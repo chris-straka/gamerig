@@ -1,4 +1,4 @@
-# rigforge — agent notes
+# gamerig (add-on `rigforge`) — agent notes
 
 One rules file only: this `AGENTS.md` is it — never create a `CLAUDE.md` in this folder (Muse ignores it and warns while both exist).
 
@@ -33,8 +33,8 @@ beat upstream on auto-placement, skinning, presets, and export.
 
 ## Siblings (separate repos, separate sessions)
 
-- `~/Games/_blender/retopoforge` — mesh stage (MIT engine + GPL extension).
-  Strategy hub: `retopoforge/docs/rigging-strategy.md`. Read it first.
+- `~/Games/_blender/retopo` — mesh stage (MIT engine + GPL extension).
+  Strategy hub: `retopo/docs/rigging-strategy.md`. Read it first.
 - `~/Games/_blender/skintokens` — ML rigger (SkinTokens/TokenRig, UniRig's
   successor; Rust since 2026-10-05; MIT code and weights, the
   Michelangelo-derived encoder is its own GPL-3.0 crate, so never call
@@ -48,5 +48,5 @@ beat upstream on auto-placement, skinning, presets, and export.
 - The games (`~/Games/<game>`, Bevy, Rust) supply the real-mesh test
   subjects; never commit game assets into this repo.
 - NOTE (2026-09-30): other agent sessions are active in this area
-  (`retopoforge`, `SWE` workspaces). Check `git status`/`git log`
+  (`retopo`, `SWE` workspaces). Check `git status`/`git log`
   before assuming a tree is yours alone.

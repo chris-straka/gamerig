@@ -1,4 +1,4 @@
-# rigforge
+# gamerig (add-on `rigforge`)
 
 Fork of Blender's Rigify (0.6.10, copied from the Blender 5.2 app bundle)
 aimed at game-ready rigs: Bevy (Rust) game characters and creatures, rigged
@@ -60,7 +60,7 @@ restored untouched on failure). Headless: one command per subject,
 `--python tools/auto_rig.py -- MESH --preset biped_hero|quadruped_stalker
 --out RIGGED.glb` (see `docs/bakeoff/rerun.md` for numbers).
 
-genforge adapter (repair-rig): genforge's `gen character` chain rerigs
+assetgen adapter (repair-rig): assetgen's `gen character` chain rerigs
 a character whose skeleton or weights can't be saved with
 
 ```sh
@@ -70,9 +70,9 @@ tools/genforge_adapter.sh repair-rig IN.glb OUT.glb RESULT.json [--class humanoi
 It drops the input's armature (meshes, materials and textures stay),
 runs `tools/auto_rig.py` with `biped_hero` (humanoid) or `quadruped_stalker`
 (quadruped) and writes the 160-bone deform GLB plus a `result.json` in
-genforge's adapter schema (`{"ok", "outputs", "tool": "rigforge", ...}`;
+assetgen's adapter schema (`{"ok", "outputs", "tool": "rigforge", ...}`;
 exit 0 rigged, 1 an auto-rig stage failed, 2 error with no result).
-Custom skeletons have no preset (`ok: false`). genforge re-standardizes
+Custom skeletons have no preset (`ok: false`). assetgen re-standardizes
 the output with motionforge before rechecking. Test:
 `tools/run_test.sh tests/test_genforge_adapter.py`. Set
 `RIGFORGE_SCRIPTS` to use an overlay folder other than `/tmp/rf_scripts`.
