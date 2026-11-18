@@ -17,7 +17,7 @@ beat upstream on auto-placement, skinning, presets, and export.
   script is `tests/smoke.py`, also run by CI on every PR).
 - Blender binary: `/Applications/Blender.app/Contents/MacOS/Blender`.
   Headless only unless the user approves a GUI launch.
-- Remote: `github.com/chris-straka/rigforge` (public since
+- Remote: `github.com/chris-straka/gamerig` (public since
   2026-10-01). License file: `COPYING`
   (GPL-2.0 text; the tree is GPL-2.0-or-later per the SPDX headers).
   Nothing secret may enter this repo: no tokens, no game assets, no
