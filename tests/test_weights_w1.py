@@ -7,7 +7,7 @@ Run (from the repo root, after syncing the overlay):
       /Applications/Blender.app/Contents/MacOS/Blender \\
       --background --factory-startup --python tests/test_weights_w1.py
 
-Deformation test per ~/SWE/retopoforge/docs/deformation-test.md: three
+Deformation test per ~/Games/_blender/retopo/docs/deformation-test.md: three
 procedural fixtures (tube limb, synthetic biped + fitted biped_hero,
 coarsened synthetic quadruped + fitted quadruped_stalker), each skinned twice
 (Blender automatic weights vs rigforge.weights.voxel) unless robust,

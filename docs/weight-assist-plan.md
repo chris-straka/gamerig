@@ -3,7 +3,7 @@
 Written 2026-10-01. Goal: skin weights for one-off monsters and pieces
 (capes, hair, armor) that come out usable automatically and that the
 owner can fix by **nudging** instead of painting. Humanoids get weights
-from the wrapped base (`~/SWE/wrapforge`), so this is for everything
+from the wrapped base (`~/Games/_blender/bodywrap`), so this is for everything
 else. Context: `~/Games/_tools/roadmap.md` section 3.3.
 
 ## Features, in build order
@@ -33,7 +33,7 @@ Python is too slow; Blender ships NumPy.
 
 ## Gates
 
-Use the deformation test (`~/SWE/retopoforge/docs/deformation-test.md`),
+Use the deformation test (`~/Games/_blender/retopo/docs/deformation-test.md`),
 as implemented in `tests/test_weights_w1.py` (metrics: p95 stretch,
 area distortion (mean |log area ratio|, rigid-invariant candy-wrap
 proxy — closed-slice volumes are ill-defined under weight-threshold
