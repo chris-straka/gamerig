@@ -46,6 +46,7 @@ jobs:
           - smoke
           - test_auto_place
           - test_auto_placement
+          - test_callers
           - test_cleanup
           - test_diagnose
           - test_game_export
