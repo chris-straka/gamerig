@@ -6,7 +6,7 @@
 # is missing, and nothing here names unirig-mac.
 # Prints PASS/FAIL per check, ends with GATE PASS or GATE FAIL. Needs a
 # Blender binary (BLENDER_BIN, `blender`, or the Mac app) and ruff (or uvx).
-#   fleet run --snapshot --linux --cores 4 -w -- bash gates/gamerig-3/gate.sh
+#   fleet run --snapshot --cores 4 -w -- bash gates/gamerig-3/gate.sh
 set -u
 cd "$(git rev-parse --show-toplevel)" || exit 2
 FAILS=0
