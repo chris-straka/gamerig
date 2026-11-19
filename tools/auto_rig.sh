@@ -1,7 +1,7 @@
 #!/bin/bash
 # One-command entry to the rigforge auto-rig pipeline.
 #
-# For external harnesses (e.g. unirig-mac eval triage) that can only run a
+# For an external harness (e.g. eval triage) that can only run a
 # single executable with no shell features: this wraps the addon overlay
 # sync + headless Blender invocation. CLI contract lives in
 # tools/auto_rig.py: MESH --preset biped_hero|quadruped_stalker --out FILE ...

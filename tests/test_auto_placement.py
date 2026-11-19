@@ -33,9 +33,9 @@ import sys
 
 import bpy
 
-TOOLS = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"
-)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TOOLS = os.path.join(ROOT, "tools")
+HINTS_DIR = os.path.join(ROOT, "tests", "fixtures", "hints")
 TMP = "/tmp/rigforge_ap_test"
 # Driver joints the biped_hero stock preset floats by design (socket/hip/neck
 # pivots with real gaps) — explicitly listed as intentionally open.
@@ -687,117 +687,107 @@ else:
         f"worst {s_gate['inside']['worst_bone']} def {s_gen['def_bones']})"
     )
 
-# 10h. Unirig-hints arbitration (read-only sample, skip-if-absent):
+# 10h. Unirig-hints arbitration (fixture from the retired UniRig port):
 # structural properties — every joint classified, trusted deltas
 # within tol, divergences recorded with numbers, trusted keys land on
 # fitter targets. Against the stalker landmarks the observed split is
 # 1 trusted + 1 supporting + 8 measurement-wins (locked below only
 # when the stalker landmarks are in hand).
 uh = load_tool("ap_unirig_hints", "unirig_hints.py")
-HINTS_SAMPLE = os.path.expanduser(
-    "~/Games/_blender/unirig-mac/tools/joints_samples/stalker_seed42.json"
-)
-if not os.path.exists(HINTS_SAMPLE):
-    print(f"hints: SKIP (missing {HINTS_SAMPLE})")
-else:
-    h_lm = s_landmarks if s_landmarks is not None else q_landmarks
-    h_doc = uh.load_hints(HINTS_SAMPLE)
-    h_rep = uh.arbitrate(h_doc, h_lm)
-    total = len(h_rep["agreed"]) + len(h_rep["diverged"]) + len(h_rep["unmapped"])
-    check(total == h_rep["joints"] == 10, f"hints classified {total}/10")
-    for e in h_rep["agreed"]:
-        check(e["delta"] <= h_rep["tol"], f"trusted {e['hint']} past tol")
-    for e in h_rep["diverged"]:
-        check(e["delta"] > h_rep["tol"], f"diverged {e['hint']} within tol")
-        check(e["measured_pos"] != e["hint_pos"], "divergence needs both sides")
-    for target in h_rep["trusted"]:
-        check(target in uh.ROLE_TO_TARGET.values(), f"bad target {target}")
-    if s_landmarks is not None:
-        check(
-            set(h_rep["trusted"]) == {"rear_top"},
-            f"stalker trusted {sorted(h_rep['trusted'])}",
-        )
-        check(
-            set(h_rep["supporting"]) == {"BR.top"},
-            f"stalker supporting {sorted(h_rep['supporting'])}",
-        )
-        check(len(h_rep["diverged"]) == 8, "stalker divergences != 8")
-        # A hinted fit trusts rear_top and still gates strict.
-        h_fit_path = os.path.join(Q_TMP, "stalker", "hinted.py")
-        hf_out, hf_code = run_tool(
-            "fit_metarig.py",
-            [
-                STALKER_MESH,
-                os.path.join(Q_TMP, "stalker", "lm.json"),
-                "--out",
-                h_fit_path,
-                "--preset",
-                "quadruped_stalker",
-                "--hints",
-                HINTS_SAMPLE,
-            ],
-        )
-        check(hf_code is None, f"hinted fit exited {hf_code!r}")
-        h_fit = parse_report(hf_out, "RIGFORGE_FIT_BEGIN", "RIGFORGE_FIT_OK")
-        check(
-            h_fit["joints"]["rear_top"]["target"] == h_rep["trusted"]["rear_top"],
-            "hinted fit did not trust rear_top",
-        )
-        check(
-            h_fit["joints"]["rear_top"]["after_d"] < 1e-3,
-            "hinted rear_top not closed",
-        )
-    print(
-        f"hints: {len(h_rep['trusted'])} trusted, "
-        f"{len(h_rep['supporting'])} supporting, "
-        f"{len(h_rep['diverged'])} measurement-wins"
-    )
-
-# 10i. SkinTokens hints (skintokens-joints/1, the current hint source since
-# unirig-mac retired; read-only sample, skip-if-absent): same structural
-# properties as 10h, and a hinted stalker fit still gates strict.
-ST_HINTS = os.path.expanduser(
-    "~/Games/_blender/skintokens/tools/joints_samples/stalker_seed0.json"
-)
-if not os.path.exists(ST_HINTS):
-    print(f"skintokens hints: SKIP (missing {ST_HINTS})")
-else:
-    st_doc = uh.load_hints(ST_HINTS)
-    check(st_doc["format"] == "skintokens-joints/1", "skintokens hints format")
-    st_rep = uh.arbitrate(
-        st_doc, s_landmarks if s_landmarks is not None else q_landmarks
-    )
-    st_total = len(st_rep["agreed"]) + len(st_rep["diverged"]) + len(st_rep["unmapped"])
+HINTS_SAMPLE = os.path.join(HINTS_DIR, "unirig_stalker_seed42.json")
+check(os.path.exists(HINTS_SAMPLE), f"missing {HINTS_SAMPLE}")
+h_lm = s_landmarks if s_landmarks is not None else q_landmarks
+h_doc = uh.load_hints(HINTS_SAMPLE)
+h_rep = uh.arbitrate(h_doc, h_lm)
+total = len(h_rep["agreed"]) + len(h_rep["diverged"]) + len(h_rep["unmapped"])
+check(total == h_rep["joints"] == 10, f"hints classified {total}/10")
+for e in h_rep["agreed"]:
+    check(e["delta"] <= h_rep["tol"], f"trusted {e['hint']} past tol")
+for e in h_rep["diverged"]:
+    check(e["delta"] > h_rep["tol"], f"diverged {e['hint']} within tol")
+    check(e["measured_pos"] != e["hint_pos"], "divergence needs both sides")
+for target in h_rep["trusted"]:
+    check(target in uh.ROLE_TO_TARGET.values(), f"bad target {target}")
+if s_landmarks is not None:
     check(
-        st_total == st_rep["joints"] == len(st_doc["joints"]),
-        f"skintokens hints classified {st_total}",
+        set(h_rep["trusted"]) == {"rear_top"},
+        f"stalker trusted {sorted(h_rep['trusted'])}",
     )
-    for e in st_rep["agreed"]:
-        check(e["delta"] <= st_rep["tol"], f"trusted {e['hint']} past tol")
-    for e in st_rep["diverged"]:
-        check(e["delta"] > st_rep["tol"], f"diverged {e['hint']} within tol")
-    for target in st_rep["trusted"]:
-        check(target in uh.ROLE_TO_TARGET.values(), f"bad target {target}")
-    if s_landmarks is not None:
-        st_fit_path = os.path.join(Q_TMP, "stalker", "hinted_skintokens.py")
-        sf_out, sf_code = run_tool(
-            "fit_metarig.py",
-            [
-                STALKER_MESH,
-                os.path.join(Q_TMP, "stalker", "lm.json"),
-                "--out",
-                st_fit_path,
-                "--preset",
-                "quadruped_stalker",
-                "--hints",
-                ST_HINTS,
-            ],
-        )
-        check(sf_code is None, f"skintokens-hinted fit exited {sf_code!r}")
-    print(
-        f"skintokens hints: {len(st_rep['trusted'])} trusted, "
-        f"{len(st_rep['supporting'])} supporting, "
-        f"{len(st_rep['diverged'])} measurement-wins"
+    check(
+        set(h_rep["supporting"]) == {"BR.top"},
+        f"stalker supporting {sorted(h_rep['supporting'])}",
     )
+    check(len(h_rep["diverged"]) == 8, "stalker divergences != 8")
+    # A hinted fit trusts rear_top and still gates strict.
+    h_fit_path = os.path.join(Q_TMP, "stalker", "hinted.py")
+    hf_out, hf_code = run_tool(
+        "fit_metarig.py",
+        [
+            STALKER_MESH,
+            os.path.join(Q_TMP, "stalker", "lm.json"),
+            "--out",
+            h_fit_path,
+            "--preset",
+            "quadruped_stalker",
+            "--hints",
+            HINTS_SAMPLE,
+        ],
+    )
+    check(hf_code is None, f"hinted fit exited {hf_code!r}")
+    h_fit = parse_report(hf_out, "RIGFORGE_FIT_BEGIN", "RIGFORGE_FIT_OK")
+    check(
+        h_fit["joints"]["rear_top"]["target"] == h_rep["trusted"]["rear_top"],
+        "hinted fit did not trust rear_top",
+    )
+    check(
+        h_fit["joints"]["rear_top"]["after_d"] < 1e-3,
+        "hinted rear_top not closed",
+    )
+print(
+    f"hints: {len(h_rep['trusted'])} trusted, "
+    f"{len(h_rep['supporting'])} supporting, "
+    f"{len(h_rep['diverged'])} measurement-wins"
+)
+
+# 10i. SkinTokens hints (skintokens-joints/1, the current hint source replacing
+# the retired UniRig port; committed fixture): same structural properties as
+# 10h, and a hinted stalker fit still gates strict.
+ST_HINTS = os.path.join(HINTS_DIR, "skintokens_stalker_seed0.json")
+check(os.path.exists(ST_HINTS), f"missing {ST_HINTS}")
+st_doc = uh.load_hints(ST_HINTS)
+check(st_doc["format"] == "skintokens-joints/1", "skintokens hints format")
+st_rep = uh.arbitrate(st_doc, s_landmarks if s_landmarks is not None else q_landmarks)
+st_total = len(st_rep["agreed"]) + len(st_rep["diverged"]) + len(st_rep["unmapped"])
+check(
+    st_total == st_rep["joints"] == len(st_doc["joints"]),
+    f"skintokens hints classified {st_total}",
+)
+for e in st_rep["agreed"]:
+    check(e["delta"] <= st_rep["tol"], f"trusted {e['hint']} past tol")
+for e in st_rep["diverged"]:
+    check(e["delta"] > st_rep["tol"], f"diverged {e['hint']} within tol")
+for target in st_rep["trusted"]:
+    check(target in uh.ROLE_TO_TARGET.values(), f"bad target {target}")
+if s_landmarks is not None:
+    st_fit_path = os.path.join(Q_TMP, "stalker", "hinted_skintokens.py")
+    sf_out, sf_code = run_tool(
+        "fit_metarig.py",
+        [
+            STALKER_MESH,
+            os.path.join(Q_TMP, "stalker", "lm.json"),
+            "--out",
+            st_fit_path,
+            "--preset",
+            "quadruped_stalker",
+            "--hints",
+            ST_HINTS,
+        ],
+    )
+    check(sf_code is None, f"skintokens-hinted fit exited {sf_code!r}")
+print(
+    f"skintokens hints: {len(st_rep['trusted'])} trusted, "
+    f"{len(st_rep['supporting'])} supporting, "
+    f"{len(st_rep['diverged'])} measurement-wins"
+)
 
 print("RIGFORGE_AUTOPLACE_OK")
