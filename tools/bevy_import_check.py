@@ -4,7 +4,7 @@
 Usage: tools/bevy_import_check.py <glb> [<glb> ...]
 
 Runs glbkit's Bevy compatibility checker (rfcheck repo,
-glbkit/compat/bevy: Bevy 0.19.1, the same pin as the game), which loads
+glbkit/compat/bevy: Bevy 0.20.0, the same pin as the game), which loads
 each file through Bevy's own glTF loader with no window or GPU, spawns
 the default scene and requires every declared skin to become SkinnedMesh
 entities with joint indices and weights.

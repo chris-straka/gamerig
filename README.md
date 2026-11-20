@@ -7,8 +7,9 @@ in Blender, exported clean.
 - License: GPL-2.0-or-later (same as upstream; Blender addons must be GPL).
 - Upstream: none vendored as a remote (source is the Blender install);
   re-copy from a newer Blender to rebase.
-- Day-0 state: pristine copy + headless smoke test (register, add human
-  metarig, generate). See TODO.md.
+- Status: parked (keeps `biped_hero` + `quadruped_stalker` presets, landmark
+  auto-place, voxel weights, deform-only Bevy GLB export, and caller contracts
+  for `bodywrap` and `assetgen`). See `TODO.md`.
 
 Layout: `rigforge/` is the addon. Zip that folder for Install-from-Disk.
 
