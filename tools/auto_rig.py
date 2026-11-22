@@ -205,12 +205,26 @@ def payload_between(output, begin, end, stage, what):
         raise StageFail(stage, f"{what}: markers {begin}/{end} missing") from None
 
 
+def tool_failed(code):
+    """True when a SystemExit code represents a non-zero exit status."""
+    if code is None:
+        return False
+    if isinstance(code, bool):
+        return code
+    if isinstance(code, int):
+        return code != 0
+    return True
+
+
 def stage_landmarks(mesh_path, preset, workdir):
     """Landmarks via tools/detect_landmarks.py; returns the landmarks dict."""
     kind = "quadruped" if preset == "quadruped_stalker" else "biped"
     out, code = run_tool("detect_landmarks.py", [mesh_path, "--kind", kind])
-    if code is not None:
-        raise StageFail("landmarks", one_line(str(code) or "detector failed"))
+    if tool_failed(code) or "RIGFORGE_LANDMARKS_OK" not in out:
+        detail = (
+            str(code) if tool_failed(code) else "landmark detector did not finish OK"
+        )
+        raise StageFail("landmarks", one_line(detail or "detector failed"))
     raw = payload_between(
         out,
         "RIGFORGE_LANDMARKS_BEGIN",
@@ -247,8 +261,9 @@ def stage_fit(mesh_path, lm_path, workdir, preset, hints, hints_rotated):
     if hints_rotated:
         argv.append("--hints-rotated")
     out, code = run_tool("fit_metarig.py", argv)
-    if code is not None:
-        raise StageFail("fit", one_line(str(code) or "fitter failed"))
+    if tool_failed(code) or "RIGFORGE_FIT_OK" not in out:
+        detail = str(code) if tool_failed(code) else "fitter did not finish OK"
+        raise StageFail("fit", one_line(detail or "fitter failed"))
     payload_between(out, "RIGFORGE_FIT_BEGIN", "RIGFORGE_FIT_OK", "fit", "fit report")
     if not os.path.exists(fitted):
         raise StageFail("fit", "fitted metarig module not emitted")
@@ -273,7 +288,7 @@ def stage_validate(mesh_path, fitted, lm_path, workdir, preset):
             report_path,
         ],
     )
-    if code is not None or "RIGFORGE_VALIDATE_OK" not in out:
+    if tool_failed(code) or "RIGFORGE_VALIDATE_OK" not in out:
         stops = [ln for ln in out.splitlines() if ln.startswith("STOP:")]
         last = (out.splitlines() or ["gate produced no output"])[-1]
         detail = " | ".join(stops[:3]) if stops else one_line(last)

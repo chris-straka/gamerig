@@ -133,4 +133,73 @@ for argv in (
     check(code == 2 and payload is None, f"{argv[0]} error path: {code}")
 check(not os.path.exists(os.path.join(work, "m.json")), "error wrote a result")
 
+# Exit-code & IP regression guards for auto_rig and test_auto_placement:
+# 1) sys.exit(0) (code == 0) must succeed, while non-zero or missing OK markers must fail.
+ar_spec = importlib.util.spec_from_file_location(
+    "auto_rig_mod", os.path.join(ROOT, "tools", "auto_rig.py")
+)
+auto_rig_mod = importlib.util.module_from_spec(ar_spec)
+ar_spec.loader.exec_module(auto_rig_mod)
+
+stage_work = os.path.join(work, "stages")
+os.makedirs(stage_work, exist_ok=True)
+fitted_file = os.path.join(stage_work, "fitted_metarig.py")
+lm_file = os.path.join(stage_work, "landmarks.json")
+with open(lm_file, "w", encoding="utf-8") as f:
+    json.dump({"height": 1.75}, f)
+
+orig_run_tool = auto_rig_mod.run_tool
+try:
+    lm_ok = 'RIGFORGE_LANDMARKS_BEGIN\n{"height": 1.75}\nRIGFORGE_LANDMARKS_OK\n'
+    fit_ok = "RIGFORGE_FIT_BEGIN\n{}\nRIGFORGE_FIT_OK\n"
+    val_ok = "RIGFORGE_VALIDATE_OK\n"
+
+    def _stub_exit_zero(filename, _argv):
+        if filename == "detect_landmarks.py":
+            return lm_ok, 0
+        if filename == "fit_metarig.py":
+            with open(fitted_file, "w", encoding="utf-8") as ff:
+                ff.write("# fitted\n")
+            return fit_ok, 0
+        return val_ok, 0
+
+    auto_rig_mod.run_tool = _stub_exit_zero
+    auto_rig_mod.stage_landmarks("mesh.glb", "biped_hero", stage_work)
+    auto_rig_mod.stage_fit("mesh.glb", lm_file, stage_work, "biped_hero", None, False)
+    auto_rig_mod.stage_validate(
+        "mesh.glb", fitted_file, lm_file, stage_work, "biped_hero"
+    )
+
+    for bad_code, bad_out in ((1, lm_ok), ("boom", lm_ok), (None, "RIGFORGE_FAIL")):
+        auto_rig_mod.run_tool = lambda _fn, _argv, c=bad_code, o=bad_out: (o, c)
+        for fn in (
+            lambda: auto_rig_mod.stage_landmarks("mesh.glb", "biped_hero", stage_work),
+            lambda: auto_rig_mod.stage_fit(
+                "mesh.glb", lm_file, stage_work, "biped_hero", None, False
+            ),
+            lambda: auto_rig_mod.stage_validate(
+                "mesh.glb", fitted_file, lm_file, stage_work, "biped_hero"
+            ),
+        ):
+            raised = False
+            try:
+                fn()
+            except auto_rig_mod.StageFail:
+                raised = True
+            check(raised, f"expected StageFail for code={bad_code!r} out={bad_out!r}")
+finally:
+    auto_rig_mod.run_tool = orig_run_tool
+
+# 2) tests/test_auto_placement.py must not retain forbidden external mesh paths.
+with open(os.path.join(ROOT, "tests", "test_auto_placement.py"), encoding="utf-8") as f:
+    ap_src = f.read().lower()
+check(
+    ("hun" + "yuan") not in ap_src,
+    "tests/test_auto_placement.py retains forbidden generator path",
+)
+check(
+    "~/downloads/" not in ap_src,
+    "tests/test_auto_placement.py retains ~/Downloads path",
+)
+
 print("RIGFORGE_GENFORGE_ADAPTER_OK")
