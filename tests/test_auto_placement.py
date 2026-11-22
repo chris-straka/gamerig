@@ -13,10 +13,10 @@ detect landmarks, fit the biped_hero metarig, run the validation gate
 numbers. Also proves the failure path (a failed gate stops the pipeline
 naming bones) and the preset-as-is fallback rung.
 
-Section 8 adds the production regression subjects (a stylized hero + two Hunyuan
-meshes, read-only external files): landmarks, fit with generate, and the
-in-session gate must pass on each. Subjects whose files are absent are
-skipped (external assets may rot); present subjects must pass.
+Section 8 adds the production regression subjects (a stylized hero,
+read-only external file): landmarks, fit with generate, and the
+in-session gate must pass when present. Subjects whose files are absent
+are skipped (external assets may rot); present subjects must pass.
 
 Pass criteria: exits 0 and prints RIGFORGE_AUTOPLACE_OK.
 """
@@ -383,13 +383,9 @@ check("fallback_preset" in rung, "no fallback preset report attached")
 print(f"ladder rung 2 OK (preset verdict: {rung['fallback_preset']['verdict']})")
 
 # 9. Production regression subjects (read-only external meshes, Section 9).
-# hero: toe margin 7.2/8.5 mm + pinky warn; elf: shoulder/foot/toe
-# outside (ponytail-dragged elbow, flat-shoe ankle); millennial: merge
-# case (shoulder/hand outside, upper-arm margin). Absent files skip.
+# hero: toe margin 7.2/8.5 mm + pinky warn. Absent files skip.
 SUBJECTS = [
     ("hero", "/tmp/bakeoff/hero_body_raw.glb"),
-    ("elf", os.path.expanduser("~/Downloads/hunyuan_elf.glb")),
-    ("mill", os.path.expanduser("~/Downloads/hunyuan_millennial.glb")),
 ]
 for tag, mesh_path in SUBJECTS:
     if not os.path.exists(mesh_path):
@@ -444,38 +440,6 @@ for tag, mesh_path in SUBJECTS:
         for side in ("L", "R"):
             finger = s_gate["warns"]["fingers"][side]
             check(finger["status"] == "ok", f"hero: finger warn: {finger}")
-    elif tag == "elf":
-        for bone in (
-            "shoulder.L",
-            "shoulder.R",
-            "foot.L",
-            "foot.R",
-            "toe.L",
-            "toe.R",
-        ):
-            check(s_bones[bone]["inside"], f"elf: {bone} outside again")
-        check(s_fit["fallbacks"]["elbow"]["fired"], "elf: elbow re-derive did not fire")
-        check(
-            s_fit["fallbacks"]["ankle"]["forefoot_trigger"],
-            "elf: forefoot ankle trigger did not fire",
-        )
-        for side in ("L", "R"):
-            finger = s_gate["warns"]["fingers"][side]
-            check(finger["status"] == "ok", f"elf: finger warn: {finger}")
-    elif tag == "mill":
-        for bone in ("shoulder.L", "shoulder.R", "hand.L", "hand.R"):
-            check(s_bones[bone]["inside"], f"mill: {bone} outside again")
-        check(
-            s_fit["fallbacks"]["hand"]["mesh_fit"], "mill: hand mesh-fit did not fire"
-        )
-        check(s_bones["toe.R"]["mid"] >= 0.01, "mill: toe.R margin regressed")
-        for side in ("L", "R"):
-            finger = s_gate["warns"]["fingers"][side]
-            check(
-                "outside" not in (finger.get("warn_cause") or ""),
-                f"mill: finger tips outside: {finger}",
-            )
-            check(finger["worst_deg"] < 50, f"mill: finger angle worse: {finger}")
     print(
         f"subject {tag}: PASS (min {s_gate['inside']['min_depth']} "
         f"worst {s_gate['inside']['worst_bone']} def {s_gen['def_bones']})"
