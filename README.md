@@ -9,7 +9,8 @@ in Blender, exported clean.
   re-copy from a newer Blender to rebase.
 - Status: parked (keeps `biped_hero` + `quadruped_stalker` presets, landmark
   auto-place, voxel weights, deform-only Bevy GLB export, and caller contracts
-  for `bodywrap` and `assetgen`). See `TODO.md`.
+  for `bodywrap` and `assetgen`; `tools/retarget_mixamo.py` delegates
+  retargeting to `motionforge`). See `TODO.md`.
 
 Layout: `rigforge/` is the addon. Zip that folder for Install-from-Disk.
 

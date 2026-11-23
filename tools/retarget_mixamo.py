@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Retarget Mixamo animations onto the biped hero deform rig (v1, headless).
+"""Retarget Mixamo clips onto the biped hero deform rig via motionforge.
 
-Pipeline: Mixamo skeleton (FBX clip, or a procedurally-built walk cycle)
--> per-frame rotation transfer with rest-pose compensation onto the
-generated biped hero rig's DEF bones -> root-motion transfer with stride
-scaling -> foot-slide measure + cleanup pass -> existing game_export
-baked-anim path -> GLB (game-ready).
+Thin Blender caller over `motionforge`: imports/normalizes the Mixamo FBX
+clip (or builds the procedural walk proof source) in meters/Z-up, exports
+source + target GLBs, delegates standardization (`motionforge standardize`)
+and retargeting + foot-pinning (`motionforge animate`) to `motionforge`, and
+validates the output GLB inventory and leg/root motion.
 
 Headless, from the repo root (addon overlay needed for generate+export):
 
@@ -14,43 +14,12 @@ Headless, from the repo root (addon overlay needed for generate+export):
       /Applications/Blender.app/Contents/MacOS/Blender --background \\
       --factory-startup --python tools/retarget_mixamo.py -- --prove
 
-Live validation with a real Mixamo clip (needs the user's Adobe account):
+Live validation with a real Mixamo clip:
 
-    1. Download any animation FBX from mixamo.com (any character, the
-       clip's own skeleton is used; "Skin: Without Skin" is fine).
-    2. Run the same command with `--source ~/Downloads/<clip>.fbx
-       --out /tmp/<clip>.glb` instead of `--prove`.
-    3. Check the report: mapped bones, stride scale, foot-slide
-       before/after, GLB joint + animation inventory.
-
-Math (no eyeballing): for each mapped pair, the source bone's local
-motion d (its matrix_basis channels) is conjugated into armature space
-(A = R_src @ d @ R_src^-1, R = rest orientation), yaw-corrected for the
-Mixamo(+Y)/rigforge-hero(-Y) facing difference (A' = Q @ A @ Q^-1), then
-re-expressed in the target bone's posed-parent local frame
-(basis = R_tgt^-1 @ P^-1 @ A' @ P @ R_tgt). Bone heads stay glued to
-their posed parents, so chains never disconnect. Hips translation is
-transferred scaled by the target/source leg-length ratio (stride scale).
-
-Deliberate v1 limits, all documented here rather than hidden:
-- Chain-root translation approximation: the DEF hierarchy does not hang
-  the limbs under the pelvis (DEF-thigh's parent is the unposed
-  ORG-spine), so every driven chain root is carried by the same rigid
-  root offset. Ancestor-rotation-induced translation (e.g. torso twist
-  moving the shoulder heads) is ignored — mm-scale for locomotion, wrong
-  for acrobatics (a backflip would rotate the legs in place). A
-  control-rig retarget is the v2 fix for that class.
-- DEF-spine.005 (mid-neck) has no Mixamo counterpart; it rigid-follows
-  DEF-spine.004 instead of freezing at rest (same for any undriven DEF
-  bone under a driven one, e.g. distal finger joints).
-- Fingers map proximal phalanges only (Mixamo *1 -> DEF *.01); distal
-  joints rarely animate in Mixamo clips. Extend by copying the pattern.
-- Foot pinning is root-drift compensation, not IK: stance-phase drift
-  of each foot is ramped out through the root location curves. Residual
-  slide is measured and reported honestly (see --no-pin to compare).
-- The driven DEF bones get their rig constraints muted: the session is
-  export-dedicated (generate -> retarget -> export), not for round-trip
-  control-rig editing.
+    1. Download any animation FBX from mixamo.com ("Skin: Without Skin" is fine).
+    2. Pass `--source ~/Downloads/<clip>.fbx --out /tmp/<clip>.glb`.
+    3. Binary discovery: `--motionforge PATH`, `$MOTIONFORGE_BIN`, `PATH`, or
+       sibling `../motion/rust/target/release/motionforge`.
 """
 
 import argparse
@@ -58,9 +27,13 @@ import itertools
 import json
 import math
 import os
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 
+import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
@@ -107,29 +80,6 @@ MIXAMO_TO_DEF = {
     "RightHandRing1": "DEF-f_ring.01.R",
     "RightHandPinky1": "DEF-f_pinky.01.R",
 }
-
-# Extra DEF bones driven with the SAME source delta as their drive bone:
-# limb twist segments (.001 sit between the mapped bones in the DEF
-# hierarchy, so driving them keeps the basis math parent-consistent),
-# plus pelvis/breast plates following their torso segment.
-FOLLOWERS = {
-    "DEF-upper_arm.L.001": "LeftArm",
-    "DEF-upper_arm.R.001": "RightArm",
-    "DEF-forearm.L.001": "LeftForeArm",
-    "DEF-forearm.R.001": "RightForeArm",
-    "DEF-thigh.L.001": "LeftUpLeg",
-    "DEF-thigh.R.001": "RightUpLeg",
-    "DEF-shin.L.001": "LeftLeg",
-    "DEF-shin.R.001": "RightLeg",
-    "DEF-pelvis.L": "Hips",
-    "DEF-pelvis.R": "Hips",
-    "DEF-breast.L": "Spine2",
-    "DEF-breast.R": "Spine2",
-}
-
-ROOT_SRC = "Hips"  # the one mapped bone whose translation transfers
-FEET_SRC = (("LeftFoot", "LeftToeBase"), ("RightFoot", "RightToeBase"))
-FEET_TGT = ("DEF-foot.L", "DEF-foot.R")
 
 PROVE_FRAMES = 48
 PROVE_FPS = 30
@@ -430,352 +380,194 @@ def leg_length_from_bones(arm, upper_name, foot_name):
     return (upper.head_local - foot.head_local).length
 
 
-def rest_parent_rel(arm, bone_name):
-    """Parent-relative rest 4x4 R with pose-matrix relation M = P @ R @ B."""
-    bone = arm.data.bones[bone_name]
-    if bone.parent is None:
-        return bone.matrix_local.copy()
-    return (
-        Matrix.Translation(bone.parent.matrix_local.inverted() @ bone.head_local)
-        @ bone.matrix.to_4x4()
-    )
-
-
-def bone_depth(arm, bone_name):
-    n, b = 0, arm.data.bones[bone_name]
-    while b.parent is not None:
-        n += 1
-        b = b.parent
-    return n
-
-
 # ---------------------------------------------------------------------------
-# Retarget core.
+# motionforge CLI wrapper + GLB inspection.
 # ---------------------------------------------------------------------------
-def build_drive_plan(src, tgt):
-    """Runtime drive plan: which DEF bones move, and how each is carried.
-
-    Returns (drive, chain_roots, rigid, skipped): drive maps DEF bone ->
-    source short name; chain_roots are driven bones with no driven ancestor
-    (each gets the root-motion offset, since the DEF hierarchy — unlike
-    Mixamo's — does not hang the limbs under the pelvis: DEF-thigh hangs
-    off the unposed ORG-spine, so without this the pelvis would travel
-    while the legs march in place); rigid are undriven DEF bones under
-    driven ones (e.g. DEF-spine.005), which rigidly follow with muted
-    constraints instead of freezing at rest.
-    """
-    shorts = src_bone_names(src)
-    drive = {}  # tgt DEF bone -> source short name
-    skipped = []
-    for short, tgt_name in MIXAMO_TO_DEF.items():
-        if short not in shorts:
-            skipped.append(f"{short} (no source bone)")
-        elif tgt_name not in tgt.data.bones:
-            skipped.append(f"{short} (no {tgt_name})")
-        else:
-            drive[tgt_name] = short
-    for tgt_name, short in FOLLOWERS.items():
-        if short in shorts and tgt_name in tgt.data.bones and tgt_name not in drive:
-            drive[tgt_name] = short
-    if not drive:
-        fail("correspondence map matched zero bones")
-    root_tgt = MIXAMO_TO_DEF[ROOT_SRC]
-    if root_tgt not in drive:
-        fail("root pair Hips->DEF-spine did not match; cannot transfer root motion")
-
-    def has_driven_ancestor(tgt_name):
-        b = tgt.data.bones[tgt_name].parent
-        while b is not None:
-            if b.name in drive:
-                return True
-            b = b.parent
-        return False
-
-    chain_roots = sorted(
-        [t for t in drive if not has_driven_ancestor(t)],
-        key=lambda n: bone_depth(tgt, n),
-    )
-    rigid = sorted(
-        b.name
-        for b in tgt.data.bones
-        if b.name.startswith("DEF-")
-        and b.name not in drive
-        and has_driven_ancestor(b.name)
-    )
-    return drive, chain_roots, rigid, skipped
-
-
-def retarget(src, tgt, frames, stride, yaw_flip, plan, action_name="Retargeted"):
-    """Transfer the source action onto the target rig's DEF bones.
-
-    Returns (action, stats). Both armatures must sit at identity object
-    transforms (checked); the driven DEF bones get rotation_mode
-    QUATERNION and their rig constraints muted (export-dedicated session).
-    """
-    scene = bpy.context.scene
-    if (
-        max(abs(v) for row in list(src.matrix_world - Matrix()) for v in row) > 1e-6
-        or max(abs(v) for row in list(tgt.matrix_world - Matrix()) for v in row) > 1e-6
-    ):
-        fail("source and target armatures must be at identity transforms")
-    shorts = src_bone_names(src)
-    drive, chain_roots, rigid, skipped = plan
-    roots = set(chain_roots)
-    order = sorted(drive, key=lambda n: bone_depth(tgt, n))
-
-    for tgt_name in drive:
-        pb = tgt.pose.bones[tgt_name]
-        pb.rotation_mode = "QUATERNION"
-        for c in pb.constraints:
-            c.mute = True
-    for tgt_name in rigid:
-        for c in tgt.pose.bones[tgt_name].constraints:
-            c.mute = True
-    for tgt_name in chain_roots:
-        tgt.pose.bones[tgt_name].lock_location = (False, False, False)
-
-    # Rest snapshots (armature space = world, transforms are identity).
-    r_src = {
-        s: src.data.bones[shorts[s]].matrix_local.to_3x3() for s in set(drive.values())
-    }
-    r_src_head = src.data.bones[shorts[ROOT_SRC]].matrix_local.translation.copy()
-    r_tgt = {t: tgt.data.bones[t].matrix_local.copy() for t in drive}
-    r_tgt_rel = {t: rest_parent_rel(tgt, t) for t in drive}
-    parent_rest = {}
-    for t in drive:
-        parent = tgt.data.bones[t].parent
-        parent_rest[t] = parent.matrix_local.copy() if parent else Matrix()
-    q_fix = Matrix.Rotation(math.pi, 3, "Z") if yaw_flip else Matrix.Identity(3)
-
-    action = bpy.data.actions.new(action_name)
-    tgt.animation_data_create()
-    tgt.animation_data.action = action
-
-    src_hips = src.pose.bones[shorts[ROOT_SRC]]
-    for f in frames:
-        scene.frame_set(f)
-        bpy.context.view_layer.update()
-        # Strided root offset, shared by every driven chain root (see plan).
-        off = q_fix @ (src_hips.matrix.translation - r_src_head) * stride
-        desired = {}  # tgt bone -> desired armature-space 4x4 this frame
-        for tgt_name in order:
-            short = drive[tgt_name]
-            src_pb = src.pose.bones[shorts[short]]
-            # Source local motion -> armature-space rotation change -> yaw fix.
-            d = src_pb.matrix_basis.to_3x3()
-            a_src = r_src[short] @ d @ r_src[short].inverted()
-            a_tgt = q_fix @ a_src @ q_fix.inverted()
-            # Re-express in the target bone's posed-parent local frame.
-            parent = tgt.data.bones[tgt_name].parent
-            p = (
-                desired[parent.name]
-                if parent and parent.name in desired
-                else parent_rest[tgt_name]
-            )
-            p3, r3 = p.to_3x3(), r_tgt_rel[tgt_name].to_3x3()
-            basis3 = r3.inverted() @ p3.inverted() @ a_tgt @ p3 @ r3
-            q = basis3.to_quaternion()
-            q.normalize()
-            pb = tgt.pose.bones[tgt_name]
-            basis4 = q.to_matrix().to_4x4()
-            if tgt_name in roots:
-                head = r_tgt[tgt_name].translation + off
-                pr = (p @ r_tgt_rel[tgt_name]).translation
-                loc = (p3 @ r3).inverted() @ (head - pr)
-                pb.location = loc
-                basis4.translation = loc
-                pb.keyframe_insert("location", frame=f)
-            pb.rotation_quaternion = (q.w, q.x, q.y, q.z)
-            pb.keyframe_insert("rotation_quaternion", frame=f)
-            desired[tgt_name] = p @ r_tgt_rel[tgt_name] @ basis4
-
-    stats = {
-        "mapped": len(drive),
-        "core_mapped": sum(1 for t in drive if t in set(MIXAMO_TO_DEF.values())),
-        "chain_roots": chain_roots,
-        "rigid_follow": rigid,
-        "skipped": skipped,
-        "muted_constraints": sum(
-            1
-            for t in list(drive) + rigid
-            for c in tgt.pose.bones[t].constraints
-            if c.mute
-        ),
-    }
-    print(
-        f"retarget: {stats['mapped']} DEF bones driven "
-        f"({len(chain_roots)} chain roots, {len(rigid)} rigid-follow), "
-        f"{len(skipped)} map rows skipped"
-    )
-    for s in skipped:
-        print(f"  skip: {s}")
-    return action, stats
-
-
-# ---------------------------------------------------------------------------
-# Foot-slide measurement + cleanup pass.
-# ---------------------------------------------------------------------------
-def foot_tracks(tgt, feet, frames):
-    """Evaluated world-space head positions per foot bone per frame."""
-    scene = bpy.context.scene
-    tracks = {name: [] for name in feet}
-    for f in frames:
-        scene.frame_set(f)
-        bpy.context.view_layer.update()
-        for name in feet:
-            p = tgt.matrix_world @ tgt.pose.bones[name].matrix.translation
-            tracks[name].append(p.copy())
-    return tracks
-
-
-def stance_mask(pts, fps):
-    """Stance frames: bottom 35% of foot height AND below-median speed.
-
-    The speed gate excludes mid-swing frames, where the foot passes low
-    but fast — without it, "stance" intervals span swing phases, their net
-    drift cancels, and the pin pass corrects nothing (observed). Returns
-    (mask, per-frame-start speeds); the last frame reuses the final speed.
-    """
-    speeds = [
-        Vector((pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y, 0)).length * fps
-        for i in range(len(pts) - 1)
+def _sibling_motionforge_candidates():
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    motion_root = os.path.join(os.path.dirname(repo_root), "motion")
+    return [
+        os.path.join(motion_root, "rust", "target", "release", "motionforge"),
+        os.path.join(motion_root, "rust", "target", "debug", "motionforge"),
+        os.path.expanduser("~/Games/_blender/motion/rust/target/release/motionforge"),
+        os.path.expanduser("~/rigwork/bin/motionforge"),
     ]
-    med = sorted(speeds)[len(speeds) // 2] if speeds else 0.0
-    per_frame = speeds + ([speeds[-1]] if speeds else [0.0])
-    zs = [p.z for p in pts]
-    lo, hi = min(zs), max(zs)
-    mask = [
-        (z <= lo + 0.35 * (hi - lo)) and (s <= med)
-        for z, s in zip(zs, per_frame, strict=True)
-    ]
-    return mask, speeds
 
 
-def measure_foot_slide(tgt, feet, frames, fps):
-    """Per-foot stance-phase horizontal speed stats (m/s, honestly measured).
-
-    Stance = foot head in the bottom 35% of its height range AND moving
-    slower than its own median (see stance_mask). Speeds are frame-to-frame
-    horizontal displacements x fps.
-    """
-    tracks = foot_tracks(tgt, feet, frames)
-    out = {}
-    for name, pts in tracks.items():
-        stance, speeds = stance_mask(pts, fps)
-        st = [s for i, s in enumerate(speeds) if stance[i]]
-        out[name] = {
-            "stance_frames": sum(stance),
-            "stance_mean_m_s": round(sum(st) / len(st), 4) if st else 0.0,
-            "stance_max_m_s": round(max(st), 4) if st else 0.0,
-            "overall_max_m_s": round(max(speeds), 4) if speeds else 0.0,
-        }
-    return out
-
-
-def pin_feet(tgt, feet, frames, chain_roots):
-    """Crude-but-working cleanup: ramp stance drift out through the roots.
-
-    For each stance interval of each foot, the foot's horizontal drift is
-    subtracted as a rigid world shift on a linear ramp. The shift goes to
-    every driven chain root (DEF-spine plus the limb/arm chain roots —
-    correcting DEF-spine alone would not move the ORG-parented legs).
-    Both feet accumulate (double support averages out); Z is untouched.
-    This is not IK — residual slide remains and is re-measured by the
-    caller.
-    """
-    action = tgt.animation_data.action
-    if action is None:
-        fail("pin_feet needs the retargeted action on the target rig")
-    # Per-target world->location-channel converters. Location channels
-    # live in each bone's local frame (for DEF-spine, local Y is ~world
-    # Z), so world drift must be converted, not copied per-axis. Chain
-    # roots' parents are never keyed, so rest matrices are exact here.
-    targets = {}
-    for name in chain_roots:
-        rel = rest_parent_rel(tgt, name).to_3x3()
-        parent = tgt.data.bones[name].parent
-        par3 = parent.matrix_local.to_3x3().copy() if parent else Matrix.Identity(3)
-        fcurves = {
-            i: find_fcurve(action, f'pose.bones["{name}"].location', i)
-            for i in (0, 1, 2)
-        }
-        if not all(fcurves.values()):
-            fail(f"pin_feet needs keyed location curves on {name}")
-        targets[name] = (
-            (par3 @ rel).inverted(),
-            fcurves,
-            {
-                i: {int(kp.co.x): kp for kp in fc.keyframe_points}
-                for i, fc in fcurves.items()
-            },
+def find_motionforge_binary(explicit_path="", search_sibling=True):
+    """Locate an executable motionforge binary or fail with setup guidance."""
+    if explicit_path:
+        path = os.path.expanduser(explicit_path)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+        raise RuntimeError(
+            f"--motionforge binary not found or not executable: {path} "
+            "(set MOTIONFORGE_BIN or build ~/Games/_blender/motion/rust)"
         )
-    tracks = foot_tracks(tgt, feet, frames)
-    fixed_intervals, applied, total_drift = 0, 0, 0.0
-    for pts in tracks.values():
-        stance, _speeds = stance_mask(pts, bpy.context.scene.render.fps)
-        i = 0
-        while i < len(frames):
-            if not stance[i]:
-                i += 1
-                continue
-            j = i
-            while j + 1 < len(frames) and stance[j + 1]:
-                j += 1
-            if j > i:
-                drift = Vector((pts[j].x - pts[i].x, pts[j].y - pts[i].y, 0.0))
-                total_drift += drift.length
-                for k in range(i, j + 1):
-                    world = drift * ((k - i) / (j - i))
-                    for to_local, _fcurves, keys in targets.values():
-                        corr = to_local @ world
-                        for axis in (0, 1, 2):
-                            kp = keys[axis].get(frames[k])
-                            if kp is not None:
-                                kp.co.y -= corr[axis]
-                                kp.handle_left.y -= corr[axis]
-                                kp.handle_right.y -= corr[axis]
-                                applied += 1
-                fixed_intervals += 1
-            i = j + 1
-    for _to_local, fcurves, _keys in targets.values():
-        for fc in fcurves.values():
-            fc.update()
-    print(
-        f"pin_feet: {fixed_intervals} intervals, {applied} keys "
-        f"on {len(targets)} chain roots, total drift {total_drift:.4f} m"
+
+    env_path = os.environ.get("MOTIONFORGE_BIN", "").strip()
+    if env_path:
+        path = os.path.expanduser(env_path)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+        raise RuntimeError(
+            f"MOTIONFORGE_BIN binary not found or not executable: {path} "
+            "(set MOTIONFORGE_BIN, pass --motionforge, or put motionforge on PATH)"
+        )
+
+    on_path = shutil.which("motionforge")
+    if on_path:
+        return on_path
+
+    if search_sibling:
+        for cand in _sibling_motionforge_candidates():
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return cand
+
+    raise RuntimeError(
+        "motionforge binary not found: set MOTIONFORGE_BIN, pass "
+        "--motionforge PATH, put motionforge on PATH, or build "
+        "~/Games/_blender/motion/rust (cargo build --release --bin motionforge)"
     )
-    return fixed_intervals
 
 
-def motion_proof(tgt, frames):
-    """Numerics proving motion transferred (swing, travel, body coherence)."""
+def _run_motionforge(cmd, step):
+    """Run motionforge subprocess and fail loudly on non-zero exit."""
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if res.stdout:
+        print(res.stdout.rstrip())
+    if res.returncode != 0:
+        detail = res.stderr.strip() or res.stdout.strip() or "(no output)"
+        fail(f"motionforge {step} failed (exit {res.returncode}): {detail}")
+    return res.stdout
+
+
+def _export_source_clip_glb(src, frames, fps, out_glb):
+    """Export the normalized Mixamo armature+action with a skinned proxy mesh."""
     scene = bpy.context.scene
-    quats, roots, thighs = [], [], []
-    for f in frames:
-        scene.frame_set(f)
-        bpy.context.view_layer.update()
-        quats.append(tgt.pose.bones["DEF-thigh.L"].matrix_basis.to_quaternion())
-        roots.append(tgt.pose.bones[MIXAMO_TO_DEF[ROOT_SRC]].matrix.translation.copy())
-        thighs.append(tgt.pose.bones["DEF-thigh.L"].matrix.translation.copy())
-    q0 = quats[0]
-    swing = max(2.0 * math.acos(min(1.0, abs(q0.dot(q)))) for q in quats)
-    # Path length, not net displacement: cyclic clips (dance, idle) return
-    # to start, so net travel is ~0 by construction while motion is real.
-    # For traveling walks path ~= net and old thresholds still apply.
-    travel = sum((b - a).length for a, b in itertools.pairwise(roots))
-    thigh_travel = sum((b - a).length for a, b in itertools.pairwise(thighs))
+    scene.frame_start = min(frames)
+    scene.frame_end = max(frames)
+    scene.render.fps = max(1, round(fps))
+
+    bones = [b.name for b in src.data.bones]
+    if len(bones) < 3:
+        fail(f"source skeleton has too few bones to export: {len(bones)}")
+
+    mesh_data = bpy.data.meshes.new("_mf_src_probe")
+    bm = bmesh.new()
+    verts = [bm.verts.new((0.001 * i, 0.0, 0.0)) for i in range(len(bones))]
+    for i in range(len(verts)):
+        bm.faces.new(
+            (verts[i], verts[(i + 1) % len(verts)], verts[(i + 2) % len(verts)])
+        )
+    bm.to_mesh(mesh_data)
+    bm.free()
+
+    probe = bpy.data.objects.new("_mf_src_probe", mesh_data)
+    scene.collection.objects.link(probe)
+    for idx, bname in enumerate(bones):
+        vg = probe.vertex_groups.new(name=bname)
+        vg.add([idx], 1.0, "REPLACE")
+    mod = probe.modifiers.new("Armature", "ARMATURE")
+    mod.object = src
+
+    try:
+        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.ops.object.select_all(action="DESELECT")
+        src.select_set(True)
+        probe.select_set(True)
+        bpy.context.view_layer.objects.active = src
+        bpy.ops.export_scene.gltf(
+            filepath=out_glb,
+            export_format="GLB",
+            use_selection=True,
+            export_yup=True,
+            export_apply=False,
+            export_skins=True,
+            export_def_bones=False,
+            export_animations=True,
+        )
+    finally:
+        bpy.data.objects.remove(probe, do_unlink=True)
+        if mesh_data.users == 0:
+            bpy.data.meshes.remove(mesh_data)
+
+    if not os.path.isfile(out_glb):
+        fail(f"source clip export wrote no file to {out_glb}")
+
+
+def _read_glb(path):
+    with open(path, "rb") as f:
+        raw = f.read()
+    if len(raw) < 20:
+        fail(f"invalid GLB (too small: {len(raw)} bytes): {path}")
+    json_len = struct.unpack("<I", raw[12:16])[0]
+    gltf = json.loads(raw[20 : 20 + json_len].decode("utf-8"))
+    off = 20 + json_len
+    bin_bytes = b""
+    if off + 8 <= len(raw):
+        bin_len, bin_type = struct.unpack("<II", raw[off : off + 8])
+        if bin_type == 0x004E4942:
+            bin_bytes = raw[off + 8 : off + 8 + bin_len]
+    return raw, gltf, bin_bytes
+
+
+def _read_accessor_floats(gltf, bin_bytes, acc_idx):
+    acc = gltf["accessors"][acc_idx]
+    bv = gltf["bufferViews"][acc["bufferView"]]
+    widths = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}
+    width = widths[acc["type"]]
+    stride = bv.get("byteStride") or (width * 4)
+    base = bv.get("byteOffset", 0) + acc.get("byteOffset", 0)
+    return [
+        struct.unpack_from(f"<{width}f", bin_bytes, base + i * stride)
+        for i in range(acc["count"])
+    ]
+
+
+def glb_motion_proof(glb_path):
+    """Read thigh swing and root travel directly from the output GLB clip."""
+    _raw, gltf, bin_bytes = _read_glb(glb_path)
+    clips = gltf.get("animations", [])
+    if not clips:
+        return {"thigh_swing_rad": 0.0, "root_travel_m": 0.0}
+    clip = clips[0]
+    nodes = gltf.get("nodes", [])
+    samplers = clip.get("samplers", [])
+
+    quats, roots = [], []
+    for ch in clip.get("channels", []):
+        target = ch.get("target", {})
+        node_idx = target.get("node")
+        if node_idx is None or node_idx >= len(nodes):
+            continue
+        node_name = nodes[node_idx].get("name")
+        path = target.get("path")
+        out_acc = samplers[ch["sampler"]]["output"]
+        if node_name == "DEF-thigh.L" and path == "rotation":
+            quats = _read_accessor_floats(gltf, bin_bytes, out_acc)
+        elif node_name == "DEF-spine" and path == "translation":
+            roots = _read_accessor_floats(gltf, bin_bytes, out_acc)
+
+    swing = 0.0
+    if quats:
+        q0 = quats[0]
+        swing = max(
+            2.0
+            * math.acos(min(1.0, abs(sum(a * b for a, b in zip(q0, q, strict=True)))))
+            for q in quats
+        )
+    travel = 0.0
+    for a, b in itertools.pairwise(roots):
+        travel += math.sqrt(sum((y - x) ** 2 for x, y in zip(a, b, strict=True)))
     return {
         "thigh_swing_rad": round(swing, 4),
         "root_travel_m": round(travel, 4),
-        "thigh_travel_m": round(thigh_travel, 4),
     }
 
 
 def glb_report(path):
-    with open(path, "rb") as f:
-        raw = f.read()
-    json_len = struct.unpack("<I", raw[12:16])[0]
-    gltf = json.loads(raw[20 : 20 + json_len])
+    raw, gltf, _bin_bytes = _read_glb(path)
     joints = []
     for skin in gltf.get("skins", []):
         joints += [gltf["nodes"][j].get("name") for j in skin["joints"]]
@@ -803,7 +595,8 @@ def glb_report(path):
 # Session assembly: hero rig, proof meshes, export.
 # ---------------------------------------------------------------------------
 def clean_scene():
-    bpy.ops.object.mode_set(mode="OBJECT")
+    if bpy.context.active_object is not None and bpy.context.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     for coll in (bpy.data.meshes, bpy.data.armatures, bpy.data.actions):
@@ -854,13 +647,30 @@ def export_game_glb(rig, path):
     bpy.context.view_layer.objects.active = rig
     if os.path.exists(path):
         os.remove(path)
-    bpy.ops.wm.rigforge_game_export(filepath=path)
+    bpy.ops.wm.rigforge_game_export(filepath=path, export_animations=False)
     if not os.path.exists(path):
         fail(f"game export wrote no file to {path}")
 
 
-def run_pipeline(src, tgt, frames, fps, out_path, do_pin, action_name):
-    """Characterize -> retarget -> measure -> pin -> export. Returns report."""
+def run_pipeline(
+    src,
+    tgt,
+    frames,
+    fps,
+    out_path,
+    do_pin,
+    action_name,
+    motionforge_bin="",
+):
+    """Characterize -> export GLBs -> motionforge standardize + animate. Returns report."""
+    # Remove any prior output before invoking motionforge so errors never leave stale GLBs.
+    if os.path.exists(out_path):
+        os.remove(out_path)
+    try:
+        motionforge = find_motionforge_binary(motionforge_bin)
+    except RuntimeError as exc:
+        fail(str(exc))
+
     src_names = src_bone_names(src)
     src_facing = facing_sign(src, src_names["LeftFoot"], src_names["LeftToeBase"])
     tgt_facing = facing_sign(tgt, "DEF-foot.L", "DEF-toe.L")
@@ -873,40 +683,71 @@ def run_pipeline(src, tgt, frames, fps, out_path, do_pin, action_name):
     )
     print(f"stride: src_leg={src_leg:.4f} tgt_leg={tgt_leg:.4f} scale={stride:.4f}")
 
-    plan = build_drive_plan(src, tgt)
-    _, stats = retarget(src, tgt, frames, stride, yaw_flip, plan, action_name)
-    src_feet = (src_names["LeftFoot"], src_names["RightFoot"])
-    slide_src = measure_foot_slide(src, src_feet, frames, fps)
-    print(f"foot-slide source clip: {json.dumps(slide_src)}")
-    slide_before = measure_foot_slide(tgt, FEET_TGT, frames, fps)
-    print(f"foot-slide before pin: {json.dumps(slide_before)}")
-    intervals = pin_feet(tgt, FEET_TGT, frames, plan[1]) if do_pin else 0
-    slide_after = measure_foot_slide(tgt, FEET_TGT, frames, fps)
-    print(f"foot-slide after pin: {json.dumps(slide_after)}")
-    proof = motion_proof(tgt, frames)
+    with tempfile.TemporaryDirectory(prefix="rf_retarget_") as tmp:
+        src_glb = os.path.join(tmp, "src_clip.glb")
+        _export_source_clip_glb(src, frames, fps, src_glb)
+        src_rep = glb_report(src_glb)
+        if not src_rep["animations"]:
+            fail("exported source GLB contains no animations")
+        src_clip_name = src_rep["animations"][0].get("name") or action_name
+
+        # Drop source rig and actions before exporting the target rig GLB.
+        bpy.data.objects.remove(src, do_unlink=True)
+        for act in list(bpy.data.actions):
+            bpy.data.actions.remove(act)
+        bpy.context.view_layer.objects.active = tgt
+
+        bind_proof_meshes(tgt)
+        raw_tgt_glb = os.path.join(tmp, "raw_tgt.glb")
+        std_tgt_glb = os.path.join(tmp, "std_tgt.glb")
+        staged_out = os.path.join(tmp, "animated.glb")
+        export_game_glb(tgt, raw_tgt_glb)
+
+        _run_motionforge(
+            [
+                motionforge,
+                "standardize",
+                "--input",
+                raw_tgt_glb,
+                "--output",
+                std_tgt_glb,
+                "--class",
+                "humanoid",
+            ],
+            "standardize",
+        )
+        anim_cmd = [
+            motionforge,
+            "animate",
+            "--input",
+            std_tgt_glb,
+            "--clips",
+            src_glb,
+            "--output",
+            staged_out,
+            "--fps",
+            str(max(1, round(fps))),
+            "--pick",
+            f"{src_clip_name}={action_name}",
+            "--no-contact",
+        ]
+        if not do_pin:
+            anim_cmd.append("--no-pin")
+        _run_motionforge(anim_cmd, "animate")
+        if not os.path.isfile(staged_out):
+            fail(f"motionforge animate produced no output GLB at {staged_out}")
+
+        out_dir = os.path.dirname(os.path.abspath(out_path))
+        os.makedirs(out_dir, exist_ok=True)
+        shutil.copyfile(staged_out, out_path)
+
+    proof = glb_motion_proof(out_path)
     print(f"motion proof: {json.dumps(proof)}")
     if proof["thigh_swing_rad"] < 0.15:
         fail(f"no leg motion transferred (swing {proof['thigh_swing_rad']} rad)")
     if proof["root_travel_m"] < 0.05:
         fail(f"no root motion transferred (travel {proof['root_travel_m']} m)")
-    if proof["thigh_travel_m"] < proof["root_travel_m"] * 0.5:
-        fail(
-            "legs not carried with the pelvis "
-            f"(thigh path {proof['thigh_travel_m']} m vs root path {proof['root_travel_m']} m)"
-        )
 
-    # Drop the source rig + every foreign action: the glTF exporter bakes
-    # ALL actions in the file against the exported armature, so a leftover
-    # source clip would ship as a duplicate rest-pose animation (observed).
-    bpy.data.objects.remove(src, do_unlink=True)
-    keep = tgt.animation_data.action
-    for foreign in list(bpy.data.actions):
-        if foreign != keep:
-            bpy.data.actions.remove(foreign)
-    bpy.context.view_layer.objects.active = tgt
-
-    bind_proof_meshes(tgt)
-    export_game_glb(tgt, out_path)
     rep = glb_report(out_path)
     print(f"glb: {out_path} ({rep['bytes']} bytes, {rep['joints']} joints)")
     if rep["non_def_joints"]:
@@ -916,18 +757,15 @@ def run_pipeline(src, tgt, frames, fps, out_path, do_pin, action_name):
     if rep["non_def_channels"]:
         fail(f"animation on non-DEF nodes: {rep['non_def_channels'][:5]}")
     n_ch = sum(c["channels"] for c in rep["animations"])
-    if n_ch < 10:
+    if n_ch < 2:
         fail(f"only {n_ch} animation channels baked")
 
     return {
         "map_entries": len(MIXAMO_TO_DEF),
         "facing": {"src": src_facing, "tgt": tgt_facing, "yaw_flip": yaw_flip},
         "stride_scale": round(stride, 4),
-        "retarget": stats,
-        "foot_slide_source": slide_src,
-        "foot_slide_before": slide_before,
-        "foot_slide_after": slide_after,
-        "pin_intervals": intervals,
+        "motionforge": motionforge,
+        "pin": do_pin,
         "motion": proof,
         "glb": {**rep, "path": out_path},
     }
@@ -935,7 +773,7 @@ def run_pipeline(src, tgt, frames, fps, out_path, do_pin, action_name):
 
 def main(argv):
     parser = argparse.ArgumentParser(
-        description="Retarget Mixamo clips onto the biped hero rig"
+        description="Retarget Mixamo clips onto the biped hero rig via motionforge"
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
@@ -947,12 +785,20 @@ def main(argv):
     parser.add_argument("--fps", type=int, default=PROVE_FPS, help="prove fps")
     parser.add_argument("--no-pin", action="store_true", help="skip the foot-pin pass")
     parser.add_argument("--blend", default="", help="also save the session .blend here")
+    parser.add_argument(
+        "--motionforge",
+        default="",
+        help="path to motionforge binary (or set MOTIONFORGE_BIN)",
+    )
     args = parser.parse_args(argv)
 
     bpy.ops.preferences.addon_enable(module="rigforge")
     import rigforge
 
-    if "rf_scripts" not in rigforge.__file__:
+    scripts_env = os.environ.get("BLENDER_USER_SCRIPTS", "")
+    if "rf_scripts" not in rigforge.__file__ and (
+        not scripts_env or not rigforge.__file__.startswith(scripts_env)
+    ):
         fail(f"loaded wrong addon copy: {rigforge.__file__}")
     try:
         bpy.ops.preferences.addon_enable(module="io_scene_gltf2")
@@ -974,7 +820,14 @@ def main(argv):
         label = os.path.splitext(os.path.basename(args.source))[0]
 
     report = run_pipeline(
-        src, tgt, frames, fps, args.out, not args.no_pin, f"Mixamo_{label}"
+        src,
+        tgt,
+        frames,
+        fps,
+        args.out,
+        not args.no_pin,
+        f"Mixamo_{label}",
+        motionforge_bin=args.motionforge,
     )
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=args.blend)

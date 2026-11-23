@@ -47,6 +47,10 @@ beat upstream on auto-placement, skinning, presets, and export.
   creature quality either way.
 - The games (`~/Games/<game>`, Bevy, Rust) supply the real-mesh test
   subjects; never commit game assets into this repo.
+- `~/Games/_blender/motion` (`motionforge` CLI) owns retargeting and
+  animation cleanup (`gamerig-5`): `tools/retarget_mixamo.py` imports/normalizes
+  Mixamo clips and delegates `standardize` + `animate` to `motionforge` rather
+  than maintaining duplicated Python retarget math.
 - NOTE (2026-09-30): other agent sessions are active in this area
   (`retopo`, `SWE` workspaces). Check `git status`/`git log`
   before assuming a tree is yours alone.
