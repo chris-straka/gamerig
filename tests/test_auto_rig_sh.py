@@ -60,6 +60,25 @@ class AutoRigShTest(unittest.TestCase):
             )
             self.assertEqual(r.returncode, 3)
 
+    def test_auto_rig_sh_passes_python_exit_code(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_blender = os.path.join(d, "blender")
+            args_file = os.path.join(d, "args.txt")
+            with open(fake_blender, "w") as f:
+                f.write(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{args_file}"\nexit 0\n')
+            os.chmod(fake_blender, os.stat(fake_blender).st_mode | stat.S_IXUSR)
+            env = dict(os.environ, BLENDER_BIN=fake_blender)
+            r = subprocess.run(
+                [AUTO_RIG_SH, "--help"], env=env, capture_output=True, text=True
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(args_file) as f:
+                argv = f.read().splitlines()
+            self.assertIn("--python-exit-code", argv)
+            idx = argv.index("--python-exit-code")
+            self.assertGreater(len(argv), idx + 1)
+            self.assertNotEqual(argv[idx + 1], "0")
+
 
 if __name__ == "__main__":
     unittest.main(argv=[sys.argv[0]])

@@ -501,27 +501,68 @@ def _read_glb(path):
         raw = f.read()
     if len(raw) < 20:
         fail(f"invalid GLB (too small: {len(raw)} bytes): {path}")
-    json_len = struct.unpack("<I", raw[12:16])[0]
-    gltf = json.loads(raw[20 : 20 + json_len].decode("utf-8"))
+    magic, version, total_len = struct.unpack("<III", raw[:12])
+    if magic != 0x46546C67 or version != 2:
+        fail(f"invalid GLB header (magic={magic:#x}, version={version}): {path}")
+    if total_len < 20 or total_len > len(raw):
+        fail(f"invalid GLB (declared {total_len} bytes, file has {len(raw)}): {path}")
+    json_len, json_type = struct.unpack("<II", raw[12:20])
+    if json_type != 0x4E4F534A:
+        fail(f"invalid GLB JSON chunk type ({json_type:#x}): {path}")
+    if 20 + json_len > len(raw):
+        fail(f"invalid GLB (JSON chunk extends past EOF): {path}")
+    try:
+        gltf = json.loads(raw[20 : 20 + json_len].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"invalid GLB JSON ({exc}): {path}")
     off = 20 + json_len
     bin_bytes = b""
     if off + 8 <= len(raw):
         bin_len, bin_type = struct.unpack("<II", raw[off : off + 8])
         if bin_type == 0x004E4942:
+            if off + 8 + bin_len > len(raw):
+                fail(f"invalid GLB (BIN chunk extends past EOF): {path}")
             bin_bytes = raw[off + 8 : off + 8 + bin_len]
     return raw, gltf, bin_bytes
 
 
 def _read_accessor_floats(gltf, bin_bytes, acc_idx):
-    acc = gltf["accessors"][acc_idx]
-    bv = gltf["bufferViews"][acc["bufferView"]]
+    accessors = gltf.get("accessors", [])
+    if not isinstance(acc_idx, int) or acc_idx < 0 or acc_idx >= len(accessors):
+        fail(f"invalid GLB accessor index: {acc_idx}")
+    acc = accessors[acc_idx]
+    if acc.get("componentType") != 5126:
+        fail(
+            f"invalid GLB accessor {acc_idx} componentType: {acc.get('componentType')}"
+        )
     widths = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}
-    width = widths[acc["type"]]
+    acc_type = acc.get("type")
+    if acc_type not in widths:
+        fail(f"invalid GLB accessor {acc_idx} type: {acc_type!r}")
+    width = widths[acc_type]
+    count = acc.get("count", 0)
+    if not isinstance(count, int) or count < 0:
+        fail(f"invalid GLB accessor {acc_idx} count: {count!r}")
+    if count == 0:
+        return []
+    bv_idx = acc.get("bufferView")
+    bvs = gltf.get("bufferViews", [])
+    if not isinstance(bv_idx, int) or bv_idx < 0 or bv_idx >= len(bvs):
+        return [(0.0,) * width for _ in range(count)]
+    bv = bvs[bv_idx]
     stride = bv.get("byteStride") or (width * 4)
+    if stride < width * 4:
+        fail(f"invalid GLB accessor {acc_idx} byteStride {stride} < {width * 4}")
     base = bv.get("byteOffset", 0) + acc.get("byteOffset", 0)
+    end = base + (count - 1) * stride + width * 4
+    if base < 0 or end > len(bin_bytes):
+        fail(
+            f"invalid GLB accessor {acc_idx} out of bounds "
+            f"(need bytes {base}..{end}, buffer has {len(bin_bytes)})"
+        )
     return [
         struct.unpack_from(f"<{width}f", bin_bytes, base + i * stride)
-        for i in range(acc["count"])
+        for i in range(count)
     ]
 
 

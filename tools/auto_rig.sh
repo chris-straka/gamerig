@@ -35,5 +35,5 @@ fi
 mkdir -p "$SCRIPTS/addons"
 rsync -a --delete "$ROOT/rigforge/" "$SCRIPTS/addons/rigforge/"
 env BLENDER_USER_SCRIPTS="$SCRIPTS" "$BLENDER" \
-    --background --factory-startup \
+    --background --factory-startup --python-exit-code 1 \
     --python "$ROOT/tools/auto_rig.py" -- "$@"

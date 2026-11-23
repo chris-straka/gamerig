@@ -26,7 +26,7 @@ run() {  # run DIR -> 0 when test_callers passes there
   mkdir -p "$scripts/addons"
   rm -rf "$scripts/addons/rigforge"
   cp -R "$dir/rigforge" "$scripts/addons/rigforge"
-  BLENDER_USER_SCRIPTS=$scripts "$BL" --background --factory-startup --python "$dir/tests/test_callers.py" > "$tmp/$(basename "$dir").log" 2>&1
+  BLENDER_USER_SCRIPTS="$scripts" "$BL" --background --factory-startup --python-exit-code 1 --python "$dir/tests/test_callers.py" > "$tmp/$(basename "$dir").log" 2>&1
   grep -q '^RIGFORGE_CALLERS_OK' "$tmp/$(basename "$dir").log"
 }
 why() {  # why CASE: the test's own failure line, or the error it crashed with
@@ -55,7 +55,7 @@ for case in markers args moved; do
   if run "$d"; then
     echo "FAIL  $case: test_callers passes with the fault planted"; FAILS=$((FAILS + 1))
   else
-    echo "PASS  $case: test_callers fails: $(why $case | tail -n 1 | cut -c1-160)"
+    echo "PASS  $case: test_callers fails: $(why "$case" | tail -n 1 | cut -c1-160)"
   fi
 done
 echo

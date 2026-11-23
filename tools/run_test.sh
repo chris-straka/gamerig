@@ -4,7 +4,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BLENDER="${BLENDER_BIN:-/Applications/Blender.app/Contents/MacOS/Blender}"
+DEFAULT_BLENDER="$(command -v blender || true)"
+BLENDER="${BLENDER_BIN:-${DEFAULT_BLENDER:-/Applications/Blender.app/Contents/MacOS/Blender}}"
 SCRIPTS=/tmp/rf_scripts
 
 if [ ! -x "$BLENDER" ]; then
@@ -24,4 +25,4 @@ esac
 mkdir -p "$SCRIPTS/addons"
 rsync -a --delete "$ROOT/rigforge/" "$SCRIPTS/addons/rigforge/"
 exec env BLENDER_USER_SCRIPTS="$SCRIPTS" "$BLENDER" \
-    --background --factory-startup --python "$TEST"
+    --background --factory-startup --python-exit-code 1 --python "$TEST"

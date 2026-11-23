@@ -37,7 +37,8 @@ def strip(ref, mesh_out, truth):
     clear()
     bpy.ops.import_scene.gltf(filepath=ref)
     arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
-    json.dump(heads(arm), open(truth, "w"), indent=1)
+    with open(truth, "w", encoding="utf-8") as fh:
+        json.dump(heads(arm), fh, indent=1)
     meshes = [o for o in bpy.data.objects if o.type == "MESH" and o.visible_get()]
     for o in meshes:
         mw = o.matrix_world.copy()
@@ -63,7 +64,8 @@ def joints(rigged, out):
     clear()
     bpy.ops.import_scene.gltf(filepath=rigged, bone_heuristic="TEMPERANCE")
     arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
-    json.dump(heads(arm), open(out, "w"), indent=1)
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(heads(arm), fh, indent=1)
 
 
 def metarig(mesh, out):
@@ -92,14 +94,8 @@ def metarig(mesh, out):
     rig.location = (cx - rcx * k, cy - rcy * k, lo - rlo * k)
     bpy.context.view_layer.update()
     h = heads(rig)
-    json.dump(
-        {
-            ("DEF-" + n if not n.endswith("@tail") else "DEF-" + n): v
-            for n, v in h.items()
-        },
-        open(out, "w"),
-        indent=1,
-    )
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump({"DEF-" + n: v for n, v in h.items()}, fh, indent=1)
 
 
 {"strip": strip, "joints": joints, "metarig": metarig}[argv[0]](*argv[1:])

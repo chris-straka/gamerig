@@ -77,7 +77,15 @@ def blender_bin():
 def bl(blender, *args, env=None):
     t0 = time.time()
     p = subprocess.run(
-        [blender, "-b", "--factory-startup", "--python", *args],
+        [
+            blender,
+            "-b",
+            "--factory-startup",
+            "--python-exit-code",
+            "1",
+            "--python",
+            *args,
+        ],
         capture_output=True,
         text=True,
         env=env,
@@ -135,9 +143,11 @@ def main():
             mesh,
             truth_p,
         )
-        truth = json.load(open(truth_p))
+        with open(truth_p, encoding="utf-8") as fh:
+            truth = json.load(fh)
         zs = [v[2] for v in truth.values()]
-        meta = json.load(open(os.path.join(CORPUS, n, "meta.json")))
+        with open(os.path.join(CORPUS, n, "meta.json"), encoding="utf-8") as fh:
+            meta = json.load(fh)
         rigged = os.path.join(w, "rigged.glb")
         p, dt = bl(
             blender,
@@ -162,8 +172,13 @@ def main():
         row["height_m"] = height
         if row["ok"]:
             jp = os.path.join(w, "rigged_joints.json")
-            bl(blender, rb, "--", "joints", rigged, jp)
-            row["rigforge"] = errors(json.load(open(jp)), truth, height)
+            pj, _ = bl(blender, rb, "--", "joints", rigged, jp)
+            if pj.returncode != 0 or not os.path.exists(jp):
+                raise RuntimeError(
+                    f"joints extraction failed for {n} (rc={pj.returncode}): {pj.stderr[-400:]}"
+                )
+            with open(jp, encoding="utf-8") as fh:
+                row["rigforge"] = errors(json.load(fh), truth, height)
             if os.path.exists(RFCHECK):
                 r = subprocess.run(
                     [RFCHECK, "--class", "hero", rigged], capture_output=True, text=True
@@ -171,11 +186,15 @@ def main():
                 row["rfcheck_exit"] = r.returncode
                 row["rfcheck"] = r.stdout.strip().splitlines()[:6]
         mp = os.path.join(w, "metarig.json")
-        bl(blender, rb, "--", "metarig", mesh, mp)
-        if os.path.exists(mp):
-            row["metarig"] = errors(json.load(open(mp)), truth, height)
+        pm, _ = bl(blender, rb, "--", "metarig", mesh, mp)
+        if pm.returncode == 0 and os.path.exists(mp):
+            with open(mp, encoding="utf-8") as fh:
+                row["metarig"] = errors(json.load(fh), truth, height)
         summary["characters"][n] = row
-        mean = lambda d: sum(d.values()) / len(d) if d else float("nan")
+
+        def mean(d):
+            return sum(d.values()) / len(d) if d else float("nan")
+
         print(
             f"{n}: ok={row['ok']} {dt}s rigforge {mean(row.get('rigforge', {})):.2f}% "
             f"metarig {mean(row.get('metarig', {})):.2f}%  {verdict[:120]}",
@@ -188,7 +207,8 @@ def main():
     os.makedirs(hist, exist_ok=True)
     shutil.copy(os.path.join(out, "summary.json"), os.path.join(hist, f"{a.tag}.json"))
     shutil.copy(os.path.join(out, "scorecard.md"), os.path.join(hist, f"{a.tag}.md"))
-    print(open(os.path.join(out, "scorecard.md")).read())
+    with open(os.path.join(out, "scorecard.md"), encoding="utf-8") as fh:
+        print(fh.read())
 
 
 def write_scorecard(s, path):
@@ -231,7 +251,10 @@ def write_scorecard(s, path):
         "|---|---|---|---|---|---|---|",
     ]
     for n, c in C.items():
-        mean = lambda d: f"{sum(d.values()) / len(d):.2f}" if d else "-"
+
+        def mean(d):
+            return f"{sum(d.values()) / len(d):.2f}" if d else "-"
+
         L.append(
             f"| {n} | {c['verts']} | {c['ok']} | {c['seconds']} | {mean(c.get('rigforge', {}))} | "
             f"{mean(c.get('metarig', {}))} | {c['verdict'][:60]} |"

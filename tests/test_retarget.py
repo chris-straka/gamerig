@@ -324,6 +324,62 @@ else:
         )
 
 
+def test_malformed_glb_rejected_cleanly(rt):
+    """Corrupted GLB chunks and out-of-bounds accessors fail via SystemExit."""
+    with tempfile.TemporaryDirectory(prefix="rf_rt_badglb_") as tmp:
+        bad_magic = os.path.join(tmp, "bad_magic.glb")
+        with open(bad_magic, "wb") as f:
+            f.write(
+                b"NOPE"
+                + struct.pack("<II", 2, 24)
+                + struct.pack("<II", 4, 0x4E4F534A)
+                + b"{}  "
+            )
+        bad_jlen = os.path.join(tmp, "bad_jlen.glb")
+        with open(bad_jlen, "wb") as f:
+            f.write(
+                struct.pack("<III", 0x46546C67, 2, 28)
+                + struct.pack("<II", 999999, 0x4E4F534A)
+                + b"{}  "
+            )
+        bad_blen = os.path.join(tmp, "bad_blen.glb")
+        with open(bad_blen, "wb") as f:
+            f.write(
+                struct.pack("<III", 0x46546C67, 2, 36)
+                + struct.pack("<II", 4, 0x4E4F534A)
+                + b"{}  "
+                + struct.pack("<II", 999999, 0x004E4942)
+                + b"\x00\x00\x00\x00"
+            )
+        for label, path in (
+            ("bad_magic", bad_magic),
+            ("truncated_json", bad_jlen),
+            ("truncated_bin", bad_blen),
+        ):
+            failed = False
+            try:
+                rt._read_glb(path)
+            except SystemExit as exc:
+                failed = exc.code != 0
+            check(failed, f"_read_glb rejects {label} via SystemExit")
+
+    gltf_oob = {
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3"}
+        ],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 16}],
+    }
+    oob_failed = False
+    try:
+        rt._read_accessor_floats(gltf_oob, b"\x00" * 16, 0)
+    except SystemExit as exc:
+        oob_failed = exc.code != 0
+    check(
+        oob_failed,
+        "_read_accessor_floats rejects out-of-bounds accessor via SystemExit",
+    )
+
+
 def main():
     tool = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "tools", "retarget_mixamo.py"
@@ -395,6 +451,7 @@ def main():
             )
             break
     test_motionforge_delegation(rt, tool)
+    test_malformed_glb_rejected_cleanly(rt)
     print("RIGFORGE_RETARGET_TEST_OK")
 
 
