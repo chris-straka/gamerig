@@ -71,6 +71,8 @@ def read_weights(mesh_obj, only=None):
 
     only: set of group names to read (None reads every group).
     """
+    if mesh_obj is None or mesh_obj.type != "MESH":
+        raise ValueError("expected a mesh object")
     groups = mesh_obj.vertex_groups
     names = [g.name for g in groups if only is None or g.name in only]
     lookup = {g.index: g.name for g in groups if only is None or g.name in only}
@@ -93,6 +95,11 @@ def write_weights(mesh_obj, rows, only=None):
     edited, not recreated, so order and lock flags survive; names in
     the rows with no group yet (a mirror's other side) are created.
     """
+    if mesh_obj is None or mesh_obj.type != "MESH":
+        raise ValueError("expected a mesh object")
+    n_verts = len(mesh_obj.data.vertices)
+    if len(rows) != n_verts:
+        raise ValueError(f"weight row count ({len(rows)}) != vertex count ({n_verts})")
     groups = mesh_obj.vertex_groups
     scope = {g.index for g in groups if only is None or g.name in only}
     stale = {}  # group index -> verts whose membership must go
@@ -203,7 +210,14 @@ def solve_nudge(per_vert, offsets, neighbors, pins, k=4, iters=NUDGE_ITERS):
     relative: ramping the excluded bone alone cannot lift a ~0
     survivor, so the whole row is feathered).
     """
+    if k < 1:
+        raise ValueError(f"influence limit k must be >= 1, got {k}")
+    if iters < 0:
+        raise ValueError(f"iters must be >= 0, got {iters}")
     n = len(per_vert)
+    for vi in pins:
+        if not 0 <= vi < n:
+            raise ValueError(f"pin vertex index {vi} out of range [0, {n})")
     bones = sorted(
         {b for row in per_vert for b in row} | {b for p in pins.values() for b in p}
     )

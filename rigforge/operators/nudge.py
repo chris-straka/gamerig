@@ -27,8 +27,22 @@ def get_pins(mesh):
     pins = {}
     if not raw:
         return pins
-    for entry in json.loads(raw):
-        vi, bone, value = int(entry[0]), str(entry[1]), float(entry[2])
+    try:
+        entries = json.loads(raw)
+    except (ValueError, TypeError):
+        return pins
+    if not isinstance(entries, list):
+        return pins
+    n_verts = len(mesh.data.vertices)
+    for entry in entries:
+        if not isinstance(entry, (list, tuple)) or len(entry) != 3:
+            continue
+        try:
+            vi, bone, value = int(entry[0]), str(entry[1]), float(entry[2])
+        except (ValueError, TypeError):
+            continue
+        if not 0 <= vi < n_verts:
+            continue
         pins.setdefault(vi, {})[bone] = None if value == EXCLUDE_SENTINEL else value
     return pins
 
@@ -95,6 +109,9 @@ class WM_OT_rigforge_nudge(bpy.types.Operator):
                 del mesh[PINS_KEY]
             self.report({"INFO"}, "Nudge pins cleared")
             return {"FINISHED"}
+        if not mesh.data.vertices:
+            self.report({"ERROR"}, f"Mesh '{mesh.name}' has no vertices")
+            return {"CANCELLED"}
         if not self.bone:
             self.report({"ERROR"}, "Pick a bone first")
             return {"CANCELLED"}

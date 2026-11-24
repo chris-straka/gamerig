@@ -249,8 +249,13 @@ def fail(msg):
 
 def build_metarig_from_module(path):
     """Rebuild a metarig object from an emitted write_metarig module."""
-    with open(path, encoding="utf-8") as f:
-        code = f.read()
+    if not os.path.isfile(path):
+        fail(f"metarig module not found: {path}")
+    try:
+        with open(path, encoding="utf-8") as f:
+            code = f.read()
+    except OSError as exc:
+        fail(f"cannot read metarig module {path}: {exc}")
     ns = {}
     exec(compile(code, path, "exec"), ns)
     if "create" not in ns:
@@ -869,6 +874,10 @@ def run_gate(env, meta, lm, signature, margin=MARGIN_DEFAULT, open_allow=()):
     to validate. No scene changes except edit-mode/object-mode flips
     on meta. Pure report — verdict mapping and exit codes live in main().
     """
+    if env is None or env.type != "MESH" or not env.data.vertices:
+        raise ValueError("validate_fit gate requires a non-empty envelope mesh")
+    if meta is None or meta.type != "ARMATURE":
+        raise ValueError("validate_fit gate requires a metarig armature")
     bpy.context.view_layer.update()
     deps = bpy.context.evaluated_depsgraph_get()
     eval_env = env.evaluated_get(deps)
@@ -1001,48 +1010,52 @@ def render_overlays(env, meta, lm, out_dir, drivers=DRIVER_BONES):
     )
     views = {"front": front, "side": Vector((1.0, 0.0, 0.0))}
     paths, projections = {}, {}
-    scene.camera = cam
-    for view, direction in views.items():
-        cam.location = center + direction * dist
-        track = (center - cam.location).to_track_quat("-Z", "Y")
-        cam.matrix_world = Matrix.Translation(cam.location) @ track.to_matrix().to_4x4()
-        bpy.context.view_layer.update()
-        path = os.path.join(out_dir, f"{view}.png")
-        render.filepath = path
-        bpy.ops.render.render(write_still=True)
-        paths[view] = path
-        joints = {}
-        mat = meta.matrix_world
-        for name in drivers:
-            b = meta.data.bones.get(name)
-            if b is None:
-                continue
-            joints[name] = {
-                which: [
-                    round(v, 4)
-                    for v in world_to_camera_view(scene, cam, mat @ getattr(b, which))[
-                        :2
+    try:
+        scene.camera = cam
+        for view, direction in views.items():
+            cam.location = center + direction * dist
+            track = (center - cam.location).to_track_quat("-Z", "Y")
+            cam.matrix_world = (
+                Matrix.Translation(cam.location) @ track.to_matrix().to_4x4()
+            )
+            bpy.context.view_layer.update()
+            path = os.path.join(out_dir, f"{view}.png")
+            render.filepath = path
+            bpy.ops.render.render(write_still=True)
+            paths[view] = path
+            joints = {}
+            mat = meta.matrix_world
+            for name in drivers:
+                b = meta.data.bones.get(name)
+                if b is None:
+                    continue
+                joints[name] = {
+                    which: [
+                        round(v, 4)
+                        for v in world_to_camera_view(
+                            scene, cam, mat @ getattr(b, which)
+                        )[:2]
                     ]
-                ]
-                for which in ("head", "tail")
+                    for which in ("head", "tail")
+                }
+            projections[view] = {
+                "location": [round(v, 4) for v in cam.location],
+                "angle": round(cam_data.angle, 4),
+                "joints": joints,
             }
-        projections[view] = {
-            "location": [round(v, 4) for v in cam.location],
-            "angle": round(cam_data.angle, 4),
-            "joints": joints,
-        }
-    joints_path = os.path.join(out_dir, "overlay_joints.json")
-    with open(joints_path, "w", encoding="utf-8") as f:
-        json.dump(projections, f, indent=2)
-    bpy.data.objects.remove(cam, do_unlink=True)
-    bpy.data.cameras.remove(cam_data)
-    (
-        render.engine,
-        render.resolution_x,
-        render.resolution_y,
-        render.film_transparent,
-        render.filepath,
-    ) = prev
+        joints_path = os.path.join(out_dir, "overlay_joints.json")
+        with open(joints_path, "w", encoding="utf-8") as f:
+            json.dump(projections, f, indent=2)
+    finally:
+        bpy.data.objects.remove(cam, do_unlink=True)
+        bpy.data.cameras.remove(cam_data)
+        (
+            render.engine,
+            render.resolution_x,
+            render.resolution_y,
+            render.film_transparent,
+            render.filepath,
+        ) = prev
     return {"front": paths["front"], "side": paths["side"], "joints": joints_path}
 
 
@@ -1086,124 +1099,154 @@ def render_closeup(mesh, env, meta, lm, out_path, size=640):
         if b is not None:
             toes.append(meta.matrix_world @ ((b.head_local + b.tail_local) / 2))
     if not toes:
+        (
+            render.engine,
+            render.resolution_x,
+            render.resolution_y,
+            render.film_transparent,
+            render.filepath,
+        ) = prev
+        scene.display.shading.light, scene.display.shading.color_type = prev_shading
         fail("close-up needs the toe bones")
     center = sum(toes, Vector()) / len(toes) + Vector((0.0, 0.0, 0.09))
 
     cam_data = bpy.data.cameras.new("rigforge_closeup_cam")
     cam = bpy.data.objects.new("rigforge_closeup_cam", cam_data)
     scene.collection.objects.link(cam)
-    front = (
-        Vector((0.0, -1.0, 0.0)) if lm["facing"] == "-Y" else Vector((0.0, 1.0, 0.0))
-    )
-    dist = (0.50 / 2) / math.tan(cam_data.angle / 2)
-    cam.location = center + front * dist
-    track = (center - cam.location).to_track_quat("-Z", "Y")
-    cam.matrix_world = Matrix.Translation(cam.location) @ track.to_matrix().to_4x4()
-    scene.camera = cam
-    bpy.context.view_layer.update()
-
     tube_mat = bpy.data.materials.new("rigforge_closeup_tube")
     tube_mat.diffuse_color = (1.0, 0.03, 0.03, 1.0)
     tubes = []
-    mat = meta.matrix_world
-    for b in meta.data.bones:
-        curve = bpy.data.curves.new(f"rf_closeup_{b.name}", "CURVE")
-        curve.dimensions = "3D"
-        curve.bevel_depth = 0.0045
-        curve.bevel_resolution = 1
-        spline = curve.splines.new("POLY")
-        spline.points.add(1)
-        head = mat @ b.head_local
-        tail = mat @ b.tail_local
-        spline.points[0].co = (head.x, head.y, head.z, 1.0)
-        spline.points[1].co = (tail.x, tail.y, tail.z, 1.0)
-        obj = bpy.data.objects.new(f"rf_closeup_{b.name}", curve)
-        obj.data.materials.append(tube_mat)
-        obj.show_in_front = True
-        scene.collection.objects.link(obj)
-        tubes.append(obj)
+    try:
+        front = (
+            Vector((0.0, -1.0, 0.0))
+            if lm["facing"] == "-Y"
+            else Vector((0.0, 1.0, 0.0))
+        )
+        dist = (0.50 / 2) / math.tan(cam_data.angle / 2)
+        cam.location = center + front * dist
+        track = (center - cam.location).to_track_quat("-Z", "Y")
+        cam.matrix_world = Matrix.Translation(cam.location) @ track.to_matrix().to_4x4()
+        scene.camera = cam
+        bpy.context.view_layer.update()
 
-    mesh.hide_render = True
-    meta.hide_render = True
-    bpy.context.view_layer.update()
-    bpy.ops.render.render(write_still=True)
+        mat = meta.matrix_world
+        for b in meta.data.bones:
+            curve = bpy.data.curves.new(f"rf_closeup_{b.name}", "CURVE")
+            curve.dimensions = "3D"
+            curve.bevel_depth = 0.0045
+            curve.bevel_resolution = 1
+            spline = curve.splines.new("POLY")
+            spline.points.add(1)
+            head = mat @ b.head_local
+            tail = mat @ b.tail_local
+            spline.points[0].co = (head.x, head.y, head.z, 1.0)
+            spline.points[1].co = (tail.x, tail.y, tail.z, 1.0)
+            obj = bpy.data.objects.new(f"rf_closeup_{b.name}", curve)
+            obj.data.materials.append(tube_mat)
+            obj.show_in_front = True
+            scene.collection.objects.link(obj)
+            tubes.append(obj)
 
-    labels = []
-    mat = meta.matrix_world
-    wanted = [f"{stem}.{side}" for stem in CLOSEUP_BONES for side in SIDES]
-    ordered = [n for n in wanted if n in meta.data.bones]
-    ordered += [b.name for b in meta.data.bones if b.name not in ordered]
+        mesh.hide_render = True
+        meta.hide_render = True
+        bpy.context.view_layer.update()
+        bpy.ops.render.render(write_still=True)
 
-    def project(point):
-        co = world_to_camera_view(scene, cam, point)
-        if 0.02 < co.x < 0.98 and 0.02 < co.y < 0.98:
-            return [round(co.x * size), round((1.0 - co.y) * size)]
-        return None
+        labels = []
+        mat = meta.matrix_world
+        wanted = [f"{stem}.{side}" for stem in CLOSEUP_BONES for side in SIDES]
+        ordered = [n for n in wanted if n in meta.data.bones]
+        ordered += [b.name for b in meta.data.bones if b.name not in ordered]
 
-    for name in ordered:
-        b = meta.data.bones[name]
-        head = mat @ b.head_local
-        tail = mat @ b.tail_local
-        for at, point in (("mid", (head + tail) / 2), ("head", head), ("tail", tail)):
-            px = project(point)
-            if px is not None:
-                labels.append({"bone": name, "at": at, "x": px[0], "y": px[1]})
-                break
-    stem, _ = os.path.splitext(out_path)
-    labels_path = stem + "_labels.json"
-    with open(labels_path, "w", encoding="utf-8") as f:
-        json.dump({"png": out_path, "size": size, "labels": labels}, f, indent=2)
+        def project(point):
+            co = world_to_camera_view(scene, cam, point)
+            if 0.02 < co.x < 0.98 and 0.02 < co.y < 0.98:
+                return [round(co.x * size), round((1.0 - co.y) * size)]
+            return None
 
-    for obj in tubes:
-        curve = obj.data
-        bpy.data.objects.remove(obj, do_unlink=True)
-        bpy.data.curves.remove(curve)
-    bpy.data.materials.remove(tube_mat)
-    mesh.hide_render = False
-    meta.hide_render = False
-    bpy.data.objects.remove(cam, do_unlink=True)
-    bpy.data.cameras.remove(cam_data)
-    (
-        render.engine,
-        render.resolution_x,
-        render.resolution_y,
-        render.film_transparent,
-        render.filepath,
-    ) = prev
-    scene.display.shading.light, scene.display.shading.color_type = prev_shading
+        for name in ordered:
+            b = meta.data.bones[name]
+            head = mat @ b.head_local
+            tail = mat @ b.tail_local
+            for at, point in (
+                ("mid", (head + tail) / 2),
+                ("head", head),
+                ("tail", tail),
+            ):
+                px = project(point)
+                if px is not None:
+                    labels.append({"bone": name, "at": at, "x": px[0], "y": px[1]})
+                    break
+        stem, _ = os.path.splitext(out_path)
+        labels_path = stem + "_labels.json"
+        with open(labels_path, "w", encoding="utf-8") as f:
+            json.dump({"png": out_path, "size": size, "labels": labels}, f, indent=2)
+    finally:
+        for obj in tubes:
+            curve = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.curves.remove(curve)
+        bpy.data.materials.remove(tube_mat)
+        mesh.hide_render = False
+        meta.hide_render = False
+        bpy.data.objects.remove(cam, do_unlink=True)
+        bpy.data.cameras.remove(cam_data)
+        (
+            render.engine,
+            render.resolution_x,
+            render.resolution_y,
+            render.film_transparent,
+            render.filepath,
+        ) = prev
+        scene.display.shading.light, scene.display.shading.color_type = prev_shading
     return {"png": out_path, "labels": labels_path, "size": size}
+
+
+def _arg_value(args, flag):
+    idx = args.index(flag)
+    if idx + 1 >= len(args):
+        fail(f"{flag} requires a value")
+    return args[idx + 1]
 
 
 def main():
     args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-    if len(args) < 3 or args[0].startswith("-"):
+    if (
+        len(args) < 3
+        or args[0].startswith("-")
+        or args[1].startswith("-")
+        or args[2].startswith("-")
+    ):
         fail("usage: validate_fit.py MESH FITTED_METARIG.py LANDMARKS.json")
     mesh_path, meta_path, lm_path = args[0], args[1], args[2]
     margin = (
-        float(args[args.index("--margin") + 1])
-        if "--margin" in args
-        else (MARGIN_DEFAULT)
+        float(_arg_value(args, "--margin")) if "--margin" in args else (MARGIN_DEFAULT)
     )
     render_dir = (
-        args[args.index("--render") + 1]
+        _arg_value(args, "--render")
         if "--render" in args
         else "/tmp/rigforge_validate_overlay"
     )
     want_render = "--no-render" not in args
-    on_fail = args[args.index("--on-fail") + 1] if "--on-fail" in args else "stop"
+    on_fail = _arg_value(args, "--on-fail") if "--on-fail" in args else "stop"
     if on_fail not in ("stop", "preset"):
         fail(f"--on-fail must be stop or preset, got {on_fail!r}")
     open_allow = (
-        tuple(args[args.index("--open") + 1].split(",")) if "--open" in args else ()
+        tuple(_arg_value(args, "--open").split(",")) if "--open" in args else ()
     )
     report_path = (
-        args[args.index("--report") + 1]
+        _arg_value(args, "--report")
         if "--report" in args
         else "/tmp/rigforge_validate_report.json"
     )
 
-    with open(lm_path, encoding="utf-8") as f:
-        lm = json.load(f)
+    try:
+        with open(lm_path, encoding="utf-8") as f:
+            lm = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"cannot read landmarks JSON {lm_path!r}: {exc}")
+    if not isinstance(lm, dict):
+        fail(f"landmark JSON must be an object, got {type(lm).__name__}")
     quad = lm.get("kind") == "quadruped"
     need = (
         ("facing", "length", "bounds", "head", "tail_base", "legs")
@@ -1234,7 +1277,7 @@ def main():
     signature, _, _ = dl.slice_signature(env, 120)
     meta = build_metarig_from_module(meta_path)
     if "--closeup" in args:
-        arg = args[args.index("--closeup") + 1]
+        arg = _arg_value(args, "--closeup")
         closeup = render_closeup(mesh, env, meta, lm, arg)
         print("RIGFORGE_CLOSEUP_BEGIN")
         print(json.dumps(closeup, indent=2))

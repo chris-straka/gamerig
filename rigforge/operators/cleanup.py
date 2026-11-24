@@ -84,6 +84,9 @@ class WM_OT_rigforge_cleanup(bpy.types.Operator):
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
+        if not mesh.data.vertices:
+            self.report({"ERROR"}, f"'{mesh.name}' has no vertices")
+            return {"CANCELLED"}
         if not mesh.vertex_groups:
             self.report({"ERROR"}, f"'{mesh.name}' has no weights to clean")
             return {"CANCELLED"}
@@ -97,24 +100,28 @@ class WM_OT_rigforge_cleanup(bpy.types.Operator):
                 "cleans every group)",
             )
             return {"CANCELLED"}
-        rows, _names = _nudge.read_weights(mesh, only)
-        if self.mode == "LIMIT":
-            rows = _cleanup.limit_rows(rows, k=self.limit)
-            what = f"limited to {self.limit}"
-        elif self.mode == "NORMALIZE":
-            rows = _cleanup.normalize_rows(rows)
-            what = "normalized"
-        elif self.mode == "PRUNE":
-            rows = _cleanup.prune_rows(rows, threshold=self.threshold)
-            what = f"pruned under {self.threshold:g}"
-        elif self.mode == "MIRROR":
-            rows = _cleanup.mirror_rows(rows, mesh)
-            what = "mirrored L<->R"
-        else:
-            offsets, neighbors = _nudge.mesh_adjacency(mesh)
-            rows = _cleanup.smooth_rows(rows, offsets, neighbors, self.passes)
-            what = f"smoothed ({self.passes} passes)"
-        _nudge.write_weights(mesh, rows, only)
+        try:
+            rows, _names = _nudge.read_weights(mesh, only)
+            if self.mode == "LIMIT":
+                rows = _cleanup.limit_rows(rows, k=self.limit)
+                what = f"limited to {self.limit}"
+            elif self.mode == "NORMALIZE":
+                rows = _cleanup.normalize_rows(rows)
+                what = "normalized"
+            elif self.mode == "PRUNE":
+                rows = _cleanup.prune_rows(rows, threshold=self.threshold)
+                what = f"pruned under {self.threshold:g}"
+            elif self.mode == "MIRROR":
+                rows = _cleanup.mirror_rows(rows, mesh)
+                what = "mirrored L<->R"
+            else:
+                offsets, neighbors = _nudge.mesh_adjacency(mesh)
+                rows = _cleanup.smooth_rows(rows, offsets, neighbors, self.passes)
+                what = f"smoothed ({self.passes} passes)"
+            _nudge.write_weights(mesh, rows, only)
+        except ValueError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
         self.report({"INFO"}, f"Weights {what} on '{mesh.name}'")
         return {"FINISHED"}
 

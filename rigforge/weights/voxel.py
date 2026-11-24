@@ -50,13 +50,25 @@ RAY_TILT = Vector((1e-4, 2e-4, 1.0)).normalized()  # dodge edge-on rays
 MIN_INFLUENCE = 0.0001  # mirrors tools/auto_rig.py (same joint assignment)
 
 
+def _require_mesh(mesh_obj, label="mesh"):
+    if mesh_obj is None or mesh_obj.type != "MESH" or not mesh_obj.data.vertices:
+        raise ValueError(f"{label} must be a mesh with at least one vertex")
+
+
+def _require_armature(armature_obj):
+    if armature_obj is None or armature_obj.type != "ARMATURE":
+        raise ValueError("expected an armature object")
+
+
 def deform_bone_names(armature_obj):
     """Sorted names of deforming bones (DEF- on generated rigs, all on plain)."""
+    _require_armature(armature_obj)
     return sorted(b.name for b in armature_obj.data.bones if b.use_deform)
 
 
 def world_verts(mesh_obj):
     """Mesh vertex coordinates in world space (n, 3)."""
+    _require_mesh(mesh_obj)
     mat = mesh_obj.matrix_world
     return np.array(
         [tuple(mat @ v.co) for v in mesh_obj.data.vertices], dtype=np.float64
@@ -97,8 +109,13 @@ def voxelize(mesh_obj, cell, pad_cells=2):
     between crossings). Keys: origin, cell, shape, interior (flat bool),
     centers (m, 3) of interior voxels, index (flat int32, voxel -> row).
     """
+    _require_mesh(mesh_obj, "voxel source")
+    if cell is None or cell <= 0.0:
+        raise ValueError(f"voxel cell size must be > 0, got {cell!r}")
     verts = world_verts(mesh_obj)
     tris = world_tris(mesh_obj)
+    if len(tris) == 0:
+        raise ValueError("voxel source mesh has no faces")
     tree = BVHTree.FromPolygons(
         [Vector(tuple(v)) for v in verts], [tuple(t) for t in tris.tolist()]
     )
@@ -251,8 +268,13 @@ def dijkstra_bounded(adjacency, seeds, cutoff, step):
 
 def bone_world_segment(armature_obj, bone_name):
     """Bone head/tail in world space ((3,), (3,))."""
+    _require_armature(armature_obj)
+    bone = armature_obj.data.bones.get(bone_name)
+    if bone is None:
+        raise ValueError(
+            f"bone {bone_name!r} not found on armature {armature_obj.name!r}"
+        )
     mat = armature_obj.matrix_world
-    bone = armature_obj.data.bones[bone_name]
     return np.array(tuple(mat @ bone.head_local)), np.array(
         tuple(mat @ bone.tail_local)
     )
@@ -361,6 +383,8 @@ def bind_weights(
     automatic (constant physical blend width for the grid pitch).
     report: grid stats, per-bone seed/cutoff info, fallback counts.
     """
+    _require_mesh(mesh_obj, "target mesh")
+    _require_armature(armature_obj)
     if bone_names is None:
         bone_names = deform_bone_names(armature_obj)
     else:
@@ -368,9 +392,16 @@ def bind_weights(
     if not bone_names:
         raise ValueError("no deforming bones on the armature")
     k = int(os.environ.get("RF_VOX_K", str(k)))
+    if k < 1:
+        raise ValueError(f"influence limit k must be >= 1, got {k}")
     source = source_obj or mesh_obj
+    _require_mesh(source, "voxel source")
     if cell is None:
         cell = default_cell(world_verts(source))
+    if cell <= 0.0:
+        raise ValueError(
+            f"voxel cell size must be > 0 (got {cell!r}; zero-extent mesh?)"
+        )
     if power is None:
         power = float(os.environ.get("RF_VOX_POWER", str(POWER_DEFAULT)))
     if smooth_iters is None:

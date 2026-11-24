@@ -277,6 +277,9 @@ class WM_OT_rigforge_auto_place(bpy.types.Operator):
                 "(active object stays the metarig)",
             )
             return {"CANCELLED"}
+        if not any(len(m.data.vertices) for m in meshes):
+            self.report({"ERROR"}, "Selected subject mesh(es) have no vertices")
+            return {"CANCELLED"}
 
         is_stalker = "tail.001" in meta.data.bones
         kind = "quadruped_stalker" if is_stalker else "biped_hero"
@@ -371,7 +374,7 @@ class WM_OT_rigforge_auto_place(bpy.types.Operator):
                         f"{gate['failures'][0]}",
                     )
                     return {"CANCELLED"}
-        except (SystemExit, KeyError, ValueError) as exc:
+        except (OSError, SystemExit, KeyError, ValueError) as exc:
             _restore_bones(meta, snap)
             _remove_temps(subject, env)
             self.report({"ERROR"}, f"Auto-place failed, metarig left as-is: {exc}")

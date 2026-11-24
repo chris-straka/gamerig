@@ -34,6 +34,8 @@ def _renorm(row):
 
 def limit_rows(rows, k=4):
     """Keep the top-k influences per vert (weight desc, name asc), renorm."""
+    if k < 1:
+        raise ValueError(f"influence limit k must be >= 1, got {k}")
     out = []
     for row in rows:
         if len(row) <= k:
@@ -51,6 +53,8 @@ def normalize_rows(rows):
 
 def prune_rows(rows, threshold=0.01):
     """Drop influences under threshold, renorm; stranded rows keep max."""
+    if threshold < 0.0:
+        raise ValueError(f"prune threshold must be >= 0, got {threshold}")
     out = []
     for row in rows:
         if not row:
@@ -67,6 +71,8 @@ def prune_rows(rows, threshold=0.01):
 
 def smooth_rows(rows, offsets, neighbors, passes_=10):
     """Fixed-count neighbor averaging in weight space (renorm each pass)."""
+    if passes_ < 0:
+        raise ValueError(f"smooth passes must be >= 0, got {passes_}")
     work = [dict(r) for r in rows]
     for _ in range(passes_):
         nxt = []
@@ -94,7 +100,13 @@ def smooth_rows(rows, offsets, neighbors, passes_=10):
 def mirror_rows(rows, mesh_obj):
     """Mirror weights across X: nearest partner to the mirrored position,
     bone names L<->R swapped. Reads the original rows for every vert."""
+    if mesh_obj is None or mesh_obj.type != "MESH":
+        raise ValueError("expected a mesh object")
     n = len(mesh_obj.data.vertices)
+    if n == 0:
+        raise ValueError("cannot mirror weights on an empty mesh")
+    if len(rows) != n:
+        raise ValueError(f"weight row count ({len(rows)}) != vertex count ({n})")
     tree = KDTree(n)
     for v in mesh_obj.data.vertices:
         tree.insert(v.co, v.index)

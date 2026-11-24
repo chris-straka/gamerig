@@ -62,12 +62,19 @@ class WM_OT_rigforge_piece_transfer(bpy.types.Operator):
         if body is piece:
             self.report({"ERROR"}, "Source must differ from the piece")
             return {"CANCELLED"}
+        if not piece.data.vertices or not body.data.vertices:
+            self.report({"ERROR"}, "Source and piece meshes must contain vertices")
+            return {"CANCELLED"}
         if not body.vertex_groups:
             self.report({"ERROR"}, f"Source '{self.source}' has no weights")
             return {"CANCELLED"}
-        assignment, report = _transfer.solve_transfer(
-            body, piece, max_dist=self.max_dist
-        )
+        try:
+            assignment, report = _transfer.solve_transfer(
+                body, piece, max_dist=self.max_dist
+            )
+        except ValueError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
         # Replace the piece's bone groups (the body rig's deform bones);
         # its own masks/pins stay. Unrigged body: every group, as before.
         only = _nudge.deform_group_names(body)

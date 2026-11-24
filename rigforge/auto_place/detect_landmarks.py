@@ -18,6 +18,7 @@ and exits nonzero on failure.
 """
 
 import json
+import os
 import sys
 from itertools import pairwise
 
@@ -42,7 +43,8 @@ class UnionFind:
 
 
 def clean_scene():
-    bpy.ops.object.mode_set(mode="OBJECT")
+    if bpy.context.object and bpy.context.object.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     for coll in (bpy.data.meshes, bpy.data.armatures, bpy.data.actions):
@@ -163,6 +165,8 @@ def cleanup_union(obj):
 
 
 def import_mesh(path):
+    if not os.path.isfile(path):
+        raise SystemExit(f"mesh not found: {path}")
     clean_scene()
     lower = path.lower()
     if lower.endswith((".glb", ".gltf")):
@@ -198,7 +202,12 @@ def envelope_copy(obj):
     remesh fuses them into one exterior envelope; the original stays
     untouched for fitting later.
     """
-    bpy.ops.object.mode_set(mode="OBJECT")
+    if obj is None or obj.type != "MESH":
+        raise ValueError("envelope_copy requires a mesh object")
+    if not obj.data.vertices:
+        raise ValueError(f"{obj.name}: mesh has no vertices")
+    if bpy.context.object and bpy.context.object.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
@@ -207,6 +216,11 @@ def envelope_copy(obj):
     dup.data = dup.data.copy()
     zs = [v.co.z for v in dup.data.vertices]
     height = max(zs) - min(zs)
+    if height <= 1e-6:
+        data = dup.data
+        bpy.data.objects.remove(dup, do_unlink=True)
+        bpy.data.meshes.remove(data)
+        raise ValueError(f"{obj.name}: degenerate zero-height mesh")
     mod = dup.modifiers.new("rx", "REMESH")
     mod.mode = "VOXEL"
     mod.voxel_size = height / 150
@@ -227,6 +241,10 @@ def slice_signature_axis(obj, slices=120, axis="z"):
     """
     if axis not in ("x", "y", "z"):
         raise SystemExit(f"slice axis must be x/y/z, got {axis!r}")
+    if slices < 1:
+        raise ValueError(f"slices must be >= 1, got {slices}")
+    if obj is None or obj.type != "MESH" or not obj.data.vertices:
+        raise ValueError("slice_signature requires a non-empty mesh object")
     ax_idx = "xyz".index(axis)
     plane = [a for a in "xyz" if a != axis]
     u_idx, v_idx = ("xyz".index(a) for a in plane)
@@ -236,6 +254,8 @@ def slice_signature_axis(obj, slices=120, axis="z"):
     lo = min(c[ax_idx] for c in coords)
     hi = max(c[ax_idx] for c in coords)
     span = hi - lo
+    if span <= 1e-9:
+        raise ValueError(f"{obj.name}: zero span along axis {axis!r}")
     planes = [lo + (s + 0.5) / slices * span for s in range(slices)]
     buckets = [[] for _ in range(slices)]
     for poly in mesh.polygons:
@@ -825,12 +845,19 @@ def check_quad(spec, landmarks):
     return bad
 
 
+def _arg_value(args, flag):
+    idx = args.index(flag)
+    if idx + 1 >= len(args):
+        raise SystemExit(f"{flag} requires a value")
+    return args[idx + 1]
+
+
 def main():
     args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     src = args[0] if args else "synthetic"
-    slices = int(args[args.index("--slices") + 1]) if "--slices" in args else 120
-    facing = args[args.index("--facing") + 1] if "--facing" in args else "-Y"
-    kind = args[args.index("--kind") + 1] if "--kind" in args else None
+    slices = int(_arg_value(args, "--slices")) if "--slices" in args else 120
+    facing = _arg_value(args, "--facing") if "--facing" in args else "-Y"
+    kind = _arg_value(args, "--kind") if "--kind" in args else None
     if kind is None:
         kind = "quadruped" if src == "synthetic-quad" else "biped"
     if kind not in ("biped", "quadruped"):

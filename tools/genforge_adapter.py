@@ -60,7 +60,9 @@ def parse(argv):
     rest = argv[4:]
     i = 0
     while i < len(rest):
-        if rest[i] == "--class" and i + 1 < len(rest):
+        if rest[i] == "--class":
+            if i + 1 >= len(rest):
+                raise AdapterError("--class requires a value")
             klass = rest[i + 1]
             i += 2
         else:
@@ -99,18 +101,23 @@ def strip_rig(src, bare_path):
     for obj in list(bpy.data.objects):
         if obj.type != "MESH" or obj not in meshes:
             bpy.data.objects.remove(obj, do_unlink=True)
+    verts = sum(len(o.data.vertices) for o in meshes)
+    if verts == 0:
+        raise AdapterError(f"{src} has no vertices")
     bpy.ops.object.select_all(action="DESELECT")
     for obj in meshes:
         obj.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]
-    bpy.ops.export_scene.gltf(
-        filepath=bare_path,
-        export_format="GLB",
-        use_selection=True,
-        export_animations=False,
-        export_skins=False,
-    )
-    verts = sum(len(o.data.vertices) for o in meshes)
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=bare_path,
+            export_format="GLB",
+            use_selection=True,
+            export_animations=False,
+            export_skins=False,
+        )
+    except (RuntimeError, OSError) as exc:
+        raise AdapterError(f"cannot export bare mesh {bare_path}: {exc}") from None
     return {"meshes": len(meshes), "vertices": verts, "bones_before": bones_before}
 
 
@@ -166,6 +173,9 @@ def relative(path, base):
 
 
 def write_result(result, payload):
+    parent = os.path.dirname(os.path.abspath(result))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     with open(result, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=False)
         f.write("\n")

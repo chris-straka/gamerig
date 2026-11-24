@@ -649,18 +649,19 @@ def parse_args(argv):
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg == "--preset":
+        if arg in ("--preset", "--out", "--blend", "--hints"):
             i += 1
-            preset = args[i] if i < len(args) else None
-        elif arg == "--out":
-            i += 1
-            out = args[i] if i < len(args) else None
-        elif arg == "--blend":
-            i += 1
-            blend = args[i] if i < len(args) else None
-        elif arg == "--hints":
-            i += 1
-            hints = args[i] if i < len(args) else None
+            if i >= len(args):
+                raise StageFail("usage", f"{arg} requires a value")
+            val = args[i]
+            if arg == "--preset":
+                preset = val
+            elif arg == "--out":
+                out = val
+            elif arg == "--blend":
+                blend = val
+            else:
+                hints = val
         elif arg == "--hints-rotated":
             hints_rotated = True
         elif arg == "--no-validate":

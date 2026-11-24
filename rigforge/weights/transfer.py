@@ -51,6 +51,11 @@ def body_diag(body_obj):
     ) ** 0.5
 
 
+def _require_mesh_verts(obj, label):
+    if obj is None or obj.type != "MESH" or not obj.data.vertices:
+        raise ValueError(f"{label} must be a mesh with at least one vertex")
+
+
 def solve_transfer(body_obj, piece_obj, max_dist=0.0, inpaint=True, k=4, iters=None):
     """Copy body weights onto the piece; returns (assignment, report).
 
@@ -59,10 +64,16 @@ def solve_transfer(body_obj, piece_obj, max_dist=0.0, inpaint=True, k=4, iters=N
     from the copied verts. With inpaint=False every vert copies its
     nearest triangle (plain nearest transfer, for comparison).
     """
+    _require_mesh_verts(body_obj, "Source body")
+    _require_mesh_verts(piece_obj, "Target piece")
+    if k < 1:
+        raise ValueError(f"influence limit k must be >= 1, got {k}")
     mesh = body_obj.data
     mesh.calc_loop_triangles()
-    body_cos = [body_obj.matrix_world @ v.co for v in mesh.vertices]
     tris = mesh.loop_triangles
+    if not tris:
+        raise ValueError("Source body mesh has no triangles to transfer from")
+    body_cos = [body_obj.matrix_world @ v.co for v in mesh.vertices]
     bvh = BVHTree.FromPolygons(
         body_cos, [list(t.vertices) for t in tris], all_triangles=True
     )
@@ -76,7 +87,7 @@ def solve_transfer(body_obj, piece_obj, max_dist=0.0, inpaint=True, k=4, iters=N
     scored = []  # (dist, vert_idx, row) for the no-close fallback
     for v in piece_obj.data.vertices:
         hit = bvh.find_nearest(piece_obj.matrix_world @ v.co)
-        if hit is None:
+        if hit is None or hit[2] is None:
             continue
         _loc, _nrm, tri_idx, dist = hit
         tv = tris[tri_idx].vertices

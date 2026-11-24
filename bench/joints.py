@@ -108,6 +108,8 @@ def main():
     ap.add_argument("--tag", default=datetime.date.today().isoformat())
     ap.add_argument("--only")
     a = ap.parse_args()
+    if not os.path.isdir(CORPUS):
+        raise SystemExit(f"corpus directory not found: {CORPUS}")
     blender = blender_bin()
     scripts = os.path.join("/tmp", "rf_bench_scripts")
     shutil.rmtree(scripts, ignore_errors=True)
@@ -136,7 +138,7 @@ def main():
         w = os.path.join(out, n)
         os.makedirs(w, exist_ok=True)
         mesh, truth_p = os.path.join(w, "mesh.glb"), os.path.join(w, "truth.json")
-        bl(
+        ps, _ = bl(
             blender,
             rb,
             "--",
@@ -145,6 +147,10 @@ def main():
             mesh,
             truth_p,
         )
+        if ps.returncode != 0 or not os.path.exists(truth_p):
+            raise RuntimeError(
+                f"strip failed for {n} (rc={ps.returncode}): {ps.stderr[-400:]}"
+            )
         with open(truth_p, encoding="utf-8") as fh:
             truth = json.load(fh)
         zs = [v[2] for v in truth.values()]
@@ -202,7 +208,7 @@ def main():
             f"metarig {mean(row.get('metarig', {})):.2f}%  {verdict[:120]}",
             flush=True,
         )
-        with open(os.path.join(out, "summary.json"), "w") as fh:
+        with open(os.path.join(out, "summary.json"), "w", encoding="utf-8") as fh:
             json.dump(summary, fh, indent=1)
     write_scorecard(summary, os.path.join(out, "scorecard.md"))
     hist = os.path.join(HERE, "history")
@@ -261,7 +267,7 @@ def write_scorecard(s, path):
             f"| {n} | {c['verts']} | {c['ok']} | {c['seconds']} | {mean(c.get('rigforge', {}))} | "
             f"{mean(c.get('metarig', {}))} | {c['verdict'][:60]} |"
         )
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(L) + "\n")
 
 

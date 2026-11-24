@@ -33,7 +33,8 @@ def _valid_types():
 def _has_typed_ancestor(metarig, bone):
     parent = bone.parent
     while parent is not None:
-        if get_rigforge_type(metarig.pose.bones[parent.name]) != "":
+        pb = metarig.pose.bones.get(parent.name)
+        if pb is not None and get_rigforge_type(pb) != "":
             return True
         parent = parent.parent
     return False
@@ -45,10 +46,16 @@ def diagnose_metarig(metarig):
     Each issue is {"bone", "code", "message", "hint"}. Bone order is
     deterministic; repeated calls return equal results.
     """
+    if metarig is None or metarig.type != "ARMATURE":
+        raise ValueError("diagnose_metarig requires an armature object")
     errors = []
     warnings = []
     bones = metarig.data.bones
-    if not any(get_rigforge_type(metarig.pose.bones[b.name]) != "" for b in bones):
+    pose_bones = metarig.pose.bones
+    if not any(
+        (pb := pose_bones.get(b.name)) is not None and get_rigforge_type(pb) != ""
+        for b in bones
+    ):
         errors.append(
             {
                 "bone": None,
@@ -61,9 +68,9 @@ def diagnose_metarig(metarig):
         return {"errors": errors, "warnings": warnings}
     valid = _valid_types()
     for bone in bones:
-        pose_bone = metarig.pose.bones[bone.name]
-        raw = pose_bone.rigforge_type or ""
-        rig_type = get_rigforge_type(pose_bone)
+        pose_bone = pose_bones.get(bone.name)
+        raw = (pose_bone.rigforge_type or "") if pose_bone is not None else ""
+        rig_type = get_rigforge_type(pose_bone) if pose_bone is not None else ""
         if raw != "" and raw != rig_type:
             warnings.append(
                 {

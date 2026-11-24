@@ -36,10 +36,14 @@ def heads(arm):
 def strip(ref, mesh_out, truth):
     clear()
     bpy.ops.import_scene.gltf(filepath=ref)
-    arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+    arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
+    if arm is None:
+        raise RuntimeError(f"{ref}: no armature found")
     with open(truth, "w", encoding="utf-8") as fh:
         json.dump(heads(arm), fh, indent=1)
     meshes = [o for o in bpy.data.objects if o.type == "MESH" and o.visible_get()]
+    if not meshes:
+        raise RuntimeError(f"{ref}: no visible mesh found")
     for o in meshes:
         mw = o.matrix_world.copy()
         for m in list(o.modifiers):
@@ -63,7 +67,9 @@ def strip(ref, mesh_out, truth):
 def joints(rigged, out):
     clear()
     bpy.ops.import_scene.gltf(filepath=rigged, bone_heuristic="TEMPERANCE")
-    arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+    arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
+    if arm is None:
+        raise RuntimeError(f"{rigged}: no armature found")
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(heads(arm), fh, indent=1)
 
@@ -76,6 +82,8 @@ def metarig(mesh, out):
     bpy.ops.import_scene.gltf(filepath=mesh)
     ms = [o for o in bpy.data.objects if o.type == "MESH" and o.visible_get()]
     zs = [(o.matrix_world @ v.co) for o in ms for v in o.data.vertices]
+    if not zs:
+        raise RuntimeError(f"{mesh}: no vertices found")
     lo = min(p.z for p in zs)
     hi = max(p.z for p in zs)
     cx = (min(p.x for p in zs) + max(p.x for p in zs)) / 2

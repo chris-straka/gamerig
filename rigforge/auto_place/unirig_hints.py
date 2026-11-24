@@ -153,26 +153,49 @@ def subject_normalizer(bounds):
 
 
 def load_hints(path):
-    with open(path, encoding="utf-8") as f:
-        doc = json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{path}: cannot read hints JSON ({exc})") from exc
+    if not isinstance(doc, dict):
+        raise ValueError(f"{path}: hints JSON must be an object")
     if doc.get("format") not in FORMATS:
         raise ValueError(
             f"{path}: format {doc.get('format')!r}, need one of {FORMATS!r}"
         )
-    if not doc.get("joints"):
+    joints = doc.get("joints")
+    if not isinstance(joints, list) or not joints:
         raise ValueError(f"{path}: no joints")
-    for j in doc["joints"]:
-        if j.get("normalized") is None or j.get("name") is None:
-            raise ValueError(f"{path}: joint missing name/normalized: {j}")
+    for j in joints:
+        if not isinstance(j, dict):
+            raise ValueError(f"{path}: joint entry must be an object: {j!r}")
+        norm = j.get("normalized")
+        if (
+            j.get("name") is None
+            or not isinstance(norm, (list, tuple))
+            or len(norm) != 3
+            or not all(
+                isinstance(v, (int, float))
+                and not isinstance(v, bool)
+                and math.isfinite(v)
+                for v in norm
+            )
+        ):
+            raise ValueError(f"{path}: joint missing valid name/normalized: {j}")
     return doc
 
 
 def arbitrate(doc, lm, rotated=False, tol=AGREE_TOL):
     """Agree-vs-measure arbitration; returns the hints report dict."""
     pts = landmark_points(lm)
-    if "bounds" not in lm:
+    if not pts:
+        raise ValueError("landmarks contain no role positions for hint mapping")
+    if "bounds" not in lm or not isinstance(lm["bounds"], dict):
         raise ValueError("landmarks need bounds for the hint frame mapping")
     center, scale = subject_normalizer(lm["bounds"])
+    if scale <= 1e-9:
+        raise ValueError("landmark bounds have zero extent")
     trusted, supporting, agreed, diverged, unmapped = {}, {}, [], [], []
     for joint in doc["joints"]:
         name = joint["name"]

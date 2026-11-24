@@ -100,6 +100,11 @@ def validate_export(rig, meshes, profile):
     """
     errors = []
     warnings = []
+    if rig is None or rig.type != "ARMATURE":
+        errors.append(
+            {"code": "invalid_rig", "message": "Export target must be an armature"}
+        )
+        return errors, warnings
     if not [b for b in rig.data.bones if b.name.startswith("DEF-")]:
         errors.append(
             {"code": "no_def_bones", "message": f"{rig.name} has no DEF bones"}
@@ -115,6 +120,14 @@ def validate_export(rig, meshes, profile):
             )
     for mesh in meshes:
         verts = mesh.data.vertices
+        if not verts:
+            errors.append(
+                {
+                    "code": "empty_mesh",
+                    "message": f"{mesh.name} has no vertices",
+                }
+            )
+            continue
         bare = sum(1 for v in verts if _vert_influences(v) == 0)
         if bare and bare == len(verts):
             errors.append(
@@ -151,7 +164,7 @@ def merge_weights(mesh_obj, targets):
     profile drops ~95 bones). Targets are kept bones, never dropped
     ones, so a fold never lands in a group that is itself removed.
     """
-    if not targets:
+    if mesh_obj is None or mesh_obj.type != "MESH" or not targets:
         return 0
     groups = mesh_obj.vertex_groups
     moves = {}  # dropped group index -> target group index
@@ -253,6 +266,9 @@ class WM_OT_rigforge_game_export(bpy.types.Operator, ExportHelper):
                 {"ERROR"}, "The glTF exporter addon (io_scene_gltf2) is not enabled"
             )
             return {"CANCELLED"}
+        if not self.filepath.strip():
+            self.report({"ERROR"}, "Export filepath cannot be empty")
+            return {"CANCELLED"}
 
         meshes = find_skinned_meshes(rig)
         if not meshes:
@@ -298,6 +314,9 @@ class WM_OT_rigforge_game_export(bpy.types.Operator, ExportHelper):
                     export_def_bones=True,
                     export_animations=self.export_animations,
                 )
+            except (RuntimeError, OSError) as exc:
+                self.report({"ERROR"}, f"glTF export failed: {exc}")
+                return {"CANCELLED"}
             finally:
                 bpy.ops.object.select_all(action="DESELECT")
                 for obj in prev_selected:
