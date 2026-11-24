@@ -61,6 +61,7 @@ initial_load_order = [
     "generate",
     "rot_mode",
     "operators",
+    "ui_game",
     "ui",
 ]
 
@@ -133,6 +134,7 @@ else:
         rig_lists,
         rig_ui_template,
         ui,
+        ui_game as ui_game,
         utils,
     )
 

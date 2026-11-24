@@ -24,8 +24,26 @@ from bpy.types import Armature, UILayout, UIList
 from bpy_extras import anim_utils
 from mathutils import Color
 
-from . import base_rig, feature_set_list, generate, rig_lists, rot_mode
+from . import base_rig, feature_set_list, generate, rig_lists, rot_mode, ui_game
 from .rigs.utils import get_limb_generated_names
+from .ui_game import (
+    DATA_PT_rigforge_cleanup as DATA_PT_rigforge_cleanup,
+)
+from .ui_game import (
+    DATA_PT_rigforge_diagnose as DATA_PT_rigforge_diagnose,
+)
+from .ui_game import (
+    DATA_PT_rigforge_game_export as DATA_PT_rigforge_game_export,
+)
+from .ui_game import (
+    DATA_PT_rigforge_nudge as DATA_PT_rigforge_nudge,
+)
+from .ui_game import (
+    DATA_PT_rigforge_transfer as DATA_PT_rigforge_transfer,
+)
+from .ui_game import (
+    DATA_PT_rigforge_voxel_weights as DATA_PT_rigforge_voxel_weights,
+)
 from .utils.animation import (
     RIGFORGE_OT_get_frame_range,
     bones_in_frame,
@@ -209,162 +227,6 @@ class DATA_PT_rigforge(bpy.types.Panel):
 
 
 # noinspection PyPep8Naming
-class DATA_PT_rigforge_game_export(bpy.types.Panel):
-    bl_label = "Rigforge Game Export"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "data"
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.object
-        return bool(obj and obj.type == "ARMATURE" and "rig_id" in obj.data)
-
-    def draw(self, context):
-        layout = self.layout
-        wm = context.window_manager
-        row = layout.row(align=True)
-        full = row.operator("wm.rigforge_game_export", text="Full GLB", icon="EXPORT")
-        full.profile = "FULL"
-        mobile = row.operator("wm.rigforge_game_export", text="Mobile GLB")
-        mobile.profile = "MOBILE"
-        mobile.mobile_limit_4 = wm.rigforge_mobile_limit_4
-        layout.prop(wm, "rigforge_mobile_limit_4")
-
-
-# noinspection PyPep8Naming
-class DATA_PT_rigforge_diagnose(bpy.types.Panel):
-    bl_label = "Rigforge Diagnose"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "data"
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.object
-        return bool(obj and obj.type == "ARMATURE" and "rig_id" not in obj.data)
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("wm.rigforge_diagnose_metarig", text="Diagnose Metarig")
-
-
-# noinspection PyPep8Naming
-class DATA_PT_rigforge_voxel_weights(bpy.types.Panel):
-    bl_label = "Rigforge Voxel Weights"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "data"
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.object
-        return bool(obj and obj.type == "MESH")
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator(
-            "wm.rigforge_voxel_weights",
-            text="Voxel Auto-Weights",
-            icon="MOD_VERTEX_WEIGHT",
-        )
-
-
-# noinspection PyPep8Naming
-class DATA_PT_rigforge_nudge(bpy.types.Panel):
-    bl_label = "Rigforge Nudge"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "data"
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.object
-        return bool(obj and obj.type == "MESH")
-
-    def draw(self, context):
-        layout = self.layout
-        wm = context.window_manager
-        layout.prop(wm, "rigforge_nudge_bone")
-        layout.prop(wm, "rigforge_nudge_value", slider=True)
-        row = layout.row(align=True)
-        pin = row.operator("wm.rigforge_nudge", text="Pin")
-        pin.mode = "PIN"
-        pin.bone = wm.rigforge_nudge_bone
-        pin.value = wm.rigforge_nudge_value
-        exc = row.operator("wm.rigforge_nudge", text="Exclude")
-        exc.mode = "EXCLUDE"
-        exc.bone = wm.rigforge_nudge_bone
-        clr = row.operator("wm.rigforge_nudge", text="Clear")
-        clr.mode = "CLEAR"
-
-
-# noinspection PyPep8Naming
-class DATA_PT_rigforge_transfer(bpy.types.Panel):
-    bl_label = "Rigforge Piece Transfer"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "data"
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.object
-        return bool(obj and obj.type == "MESH")
-
-    def draw(self, context):
-        layout = self.layout
-        wm = context.window_manager
-        layout.prop_search(
-            wm, "rigforge_transfer_source", bpy.data, "objects", text="Source"
-        )
-        layout.prop(wm, "rigforge_transfer_dist")
-        op = layout.operator("wm.rigforge_piece_transfer", text="Transfer")
-        op.source = wm.rigforge_transfer_source
-        op.max_dist = wm.rigforge_transfer_dist
-
-
-# noinspection PyPep8Naming
-class DATA_PT_rigforge_cleanup(bpy.types.Panel):
-    bl_label = "Rigforge Cleanup"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "data"
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.object
-        return bool(obj and obj.type == "MESH")
-
-    def draw(self, context):
-        layout = self.layout
-        wm = context.window_manager
-        layout.prop(wm, "rigforge_cleanup_limit")
-        layout.prop(wm, "rigforge_cleanup_threshold", slider=True)
-        layout.prop(wm, "rigforge_cleanup_passes")
-        layout.prop(wm, "rigforge_cleanup_subset")
-        row = layout.row(align=True)
-        for mode, text in (
-            ("LIMIT", "Limit"),
-            ("NORMALIZE", "Norm"),
-            ("PRUNE", "Prune"),
-        ):
-            op = row.operator("wm.rigforge_cleanup", text=text)
-            op.mode = mode
-            op.limit = wm.rigforge_cleanup_limit
-            op.threshold = wm.rigforge_cleanup_threshold
-            op.passes = wm.rigforge_cleanup_passes
-            op.subset = wm.rigforge_cleanup_subset
-        row = layout.row(align=True)
-        for mode, text in (("MIRROR", "Mirror"), ("SMOOTH", "Smooth")):
-            op = row.operator("wm.rigforge_cleanup", text=text)
-            op.mode = mode
-            op.limit = wm.rigforge_cleanup_limit
-            op.threshold = wm.rigforge_cleanup_threshold
-            op.passes = wm.rigforge_cleanup_passes
-            op.subset = wm.rigforge_cleanup_subset
-
-
-# noinspection PyPep8Naming
 class DATA_PT_rigforge_advanced(bpy.types.Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
@@ -429,7 +291,7 @@ class DATA_PT_rigforge_samples(bpy.types.Panel):
         rigforge_types = get_rigforge_types(id_store)
         build_type_list(context, rigforge_types)
 
-        if id_store.rigforge_active_type > len(rigforge_types):
+        if id_store.rigforge_active_type >= len(rigforge_types):
             id_store.rigforge_active_type = 0
 
         # Rig type list
@@ -449,7 +311,8 @@ class DATA_PT_rigforge_samples(bpy.types.Panel):
         props = layout.operator(
             "armature.rigforge_metarig_sample_add", text="Add sample"
         )
-        props.metarig_type = rigforge_types[id_store.rigforge_active_type].name
+        if rigforge_types:
+            props.metarig_type = rigforge_types[id_store.rigforge_active_type].name
 
 
 # noinspection SpellCheckingInspection
@@ -720,7 +583,7 @@ class DATA_PT_rigforge_collection_ui(bpy.types.Panel):
 
             grid = box.grid_flow(row_major=True, columns=2, even_columns=True)
 
-            for i, bcoll_id in enumerate(row_table[0]):
+            for _i, bcoll_id in enumerate(row_table[0]):
                 self.draw_btn_block(arm, grid, bcoll_id, loose=True)
 
 
@@ -1533,8 +1396,10 @@ class Sample(bpy.types.Operator):
         try:
             rig = rig_lists.rigs[self.metarig_type]["module"]
             create_sample = rig.create_sample
-        except (ImportError, AttributeError, KeyError):
-            raise Exception("rig type '" + self.metarig_type + "' has no sample.")
+        except (ImportError, AttributeError, KeyError) as exc:
+            raise Exception(
+                "rig type '" + self.metarig_type + "' has no sample."
+            ) from exc
         else:
             create_sample(context.active_object)
         finally:
@@ -1925,7 +1790,7 @@ def clear_animation(channelbag, anim_type, names):
     f_curves = []
     for fcu in channelbag.fcurves:
         words = fcu.data_path.split('"')
-        if words[0] == "pose.bones[" and words[1] in bones:
+        if len(words) >= 2 and words[0] == "pose.bones[" and words[1] in bones:
             f_curves.append(fcu)
 
     if not f_curves:
@@ -2198,6 +2063,9 @@ class OBJECT_OT_Rot2Pole(bpy.types.Operator):
         rig = verify_armature_obj(context.object)
 
         if self.bone_name:
+            if self.bone_name not in rig.pose.bones:
+                self.report({"ERROR"}, f"Bone '{self.bone_name}' not found")
+                return {"CANCELLED"}
             bpy.ops.pose.select_all(action="DESELECT")
             rig.pose.bones[self.bone_name].select = True
 
@@ -2226,7 +2094,13 @@ class POSE_OT_rigforge_collection_ref_add(bpy.types.Operator):
 
     def execute(self, context):
         params = get_rigforge_params(context.active_pose_bone)
-        getattr(params, self.prop_name).add()
+        coll = getattr(params, self.prop_name, None)
+        if coll is None:
+            self.report(
+                {"ERROR"}, f"Unknown collection reference property '{self.prop_name}'"
+            )
+            return {"CANCELLED"}
+        coll.add()
         return {"FINISHED"}
 
 
@@ -2246,7 +2120,14 @@ class POSE_OT_rigforge_collection_ref_remove(bpy.types.Operator):
 
     def execute(self, context):
         params = get_rigforge_params(context.active_pose_bone)
-        getattr(params, self.prop_name).remove(self.index)
+        coll = getattr(params, self.prop_name, None)
+        if coll is None or not (0 <= self.index < len(coll)):
+            self.report(
+                {"ERROR"},
+                f"Collection reference '{self.prop_name}[{self.index}]' out of range",
+            )
+            return {"CANCELLED"}
+        coll.remove(self.index)
         return {"FINISHED"}
 
 
@@ -2264,12 +2145,6 @@ classes = (
     DATA_UL_rigforge_color_sets,
     DATA_MT_rigforge_color_sets_context_menu,
     DATA_PT_rigforge,
-    DATA_PT_rigforge_game_export,
-    DATA_PT_rigforge_voxel_weights,
-    DATA_PT_rigforge_nudge,
-    DATA_PT_rigforge_transfer,
-    DATA_PT_rigforge_cleanup,
-    DATA_PT_rigforge_diagnose,
     DATA_PT_rigforge_advanced,
     DATA_PT_rigforge_color_sets,
     DATA_UL_rigforge_bone_collections,
@@ -2316,12 +2191,14 @@ def register():
 
     # Sub-modules.
     rot_mode.register()
+    ui_game.register()
 
 
 def unregister():
     from bpy.utils import unregister_class
 
     # Sub-modules.
+    ui_game.unregister()
     rot_mode.unregister()
 
     # Classes.
