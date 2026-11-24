@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ML joint hints as SOFT priors for the metarig fitter (Phase 4.5).
 
-Reads a skintokens-joints/1 document (`skintokens joints`, the current
-source, ~/Games/_blender/skintokens) or a legacy unirig-joints/1 one (same
+Reads a skintokens-joints/1 document (`skintokens joints`, sibling
+`skintokens` checkout) or a legacy unirig-joints/1 one (same
 schema; unirig-mac is retired). Coordinates only — see
 docs/auto_placement.md Section 4.5 for the license boundary. Each hint is
 arbitrated against the measured landmarks:

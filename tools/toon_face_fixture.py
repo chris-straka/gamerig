@@ -1,15 +1,15 @@
 # SPDX-FileCopyrightText: 2026 rigforge contributors
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Deterministic procedural Brell toon-proportioned head + body fixture.
+"""Deterministic procedural toon-proportioned head + body fixture.
 
-Builds a 1.70 m stylized toon biped with Brell proportions (~0.27 head ratio,
-chunky upper torso, and clean facial loop geometry for eyelids, brows, mouth
-cleft, nose, and jaw/chin) plus helpers to pose expressions, query ground-truth
-face feature locations/vertex regions, and render side-by-side Brell talk-camera
-comparison sheets.
+Builds a 1.70 m stylized toon biped with oversized toon proportions (~0.27 head
+ratio, chunky upper torso, and clean facial loop geometry for eyelids, brows,
+mouth cleft, nose, and jaw/chin) plus helpers to pose expressions, query
+ground-truth face feature locations/vertex regions, and render side-by-side
+talk-camera comparison sheets.
 
-Used by tests/test_brell_face_rig.py and gates/gamerig-6/gate.sh; works both in
+Used by tests/test_toon_face_rig.py and gates/gamerig-6/gate.sh; works both in
 headless Blender and under the bpy pip wheel.
 """
 
@@ -53,8 +53,8 @@ FACE_SPEC = {
     "crown": Vector((0.0, -0.01, HEAD_MAX_Z)),
 }
 
-# Brell talk camera framing (aligned with meshweights' talk shot: 1.3 m,
-# 38 deg vertical FOV, 24 deg yaw off front -Y, aiming at upper-torso/face).
+# Talk camera framing (1.3 m, 38 deg vertical FOV, 24 deg yaw off front -Y,
+# aiming at upper-torso/face).
 TALK_CAM_DISTANCE_M = 1.30
 TALK_CAM_FOV_DEG = 38.0
 TALK_CAM_YAW_DEG = 24.0
@@ -312,8 +312,8 @@ def _build_limb_tube(name, profile, mat, segs=18):
     return obj
 
 
-def build_brell_fixture(name="BrellToonFixture"):
-    """Build deterministic Brell toon character mesh; returns (obj, spec)."""
+def build_toon_fixture(name="ToonCharacterFixture"):
+    """Build deterministic stylized toon character mesh; returns (obj, spec)."""
     clean_scene()
     n_theta = 112
     thetas = _angle_grid(n_theta)
@@ -494,7 +494,7 @@ def reset_face_pose(rig):
 
 
 def apply_expression(rig, expr_name):
-    """Apply a named Brell facial expression on the generated biped_hero rig."""
+    """Apply a named facial expression on the generated biped_hero rig."""
     reset_face_pose(rig)
     if expr_name == "rest":
         return
@@ -578,12 +578,12 @@ def _draw_label(buf, x0, y0, text, scale=2, color=(1.0, 1.0, 1.0, 1.0)):
 
 
 def setup_talk_camera():
-    """Create and activate Brell's talk camera (1.3 m, 38 deg vertical FOV)."""
+    """Create and activate the talk-shot camera (1.3 m, 38 deg vertical FOV)."""
     scene = bpy.context.scene
-    cam_data = bpy.data.cameras.new("BrellTalkCam")
+    cam_data = bpy.data.cameras.new("ToonTalkCam")
     cam_data.sensor_fit = "VERTICAL"
     cam_data.angle_y = math.radians(TALK_CAM_FOV_DEG)
-    cam = bpy.data.objects.new("BrellTalkCam", cam_data)
+    cam = bpy.data.objects.new("ToonTalkCam", cam_data)
     scene.collection.objects.link(cam)
     yaw = math.radians(TALK_CAM_YAW_DEG)
     pitch = math.radians(TALK_CAM_PITCH_DEG)
@@ -622,7 +622,7 @@ def _render_panel(path, width, height):
 
 
 def render_comparison_sheet(panels, out_path, panel_w=420, panel_h=520):
-    """Render and composite [(label, apply_fn)] side-by-side at Brell's talk camera.
+    """Render and composite [(label, apply_fn)] side-by-side at the talk camera.
 
     Each entry in `panels` is `(label_text, callback)` where `callback()` sets up
     the scene pose/objects for that column before rendering. Composites into one
@@ -643,7 +643,7 @@ def render_comparison_sheet(panels, out_path, panel_w=420, panel_h=520):
         for idx, (label, setup_fn) in enumerate(panels):
             setup_fn()
             bpy.context.view_layer.update()
-            tmp_png = os.path.join(tmp_dir, f"_brell_panel_{idx}.png")
+            tmp_png = os.path.join(tmp_dir, f"_toon_panel_{idx}.png")
             _render_panel(tmp_png, panel_w, panel_h)
             panel_files.append(tmp_png)
             img = bpy.data.images.load(tmp_png, check_existing=False)
@@ -662,7 +662,7 @@ def render_comparison_sheet(panels, out_path, panel_w=420, panel_h=520):
 
         # Write composite via Blender's image saver (expects bottom-to-top RGBA)
         out_img = bpy.data.images.new(
-            "BrellFaceSheet", width=total_w, height=total_h, alpha=True
+            "ToonFaceSheet", width=total_w, height=total_h, alpha=True
         )
         try:
             out_img.pixels.foreach_set(np.flipud(canvas).ravel())

@@ -1,30 +1,37 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Verify rigforge GLBs load in Bevy (the games' engine) headless.
+"""Verify rigforge GLBs load in Bevy headless.
 
 Usage: tools/bevy_import_check.py <glb> [<glb> ...]
 
-Runs glbkit's Bevy compatibility checker (rfcheck repo,
-glbkit/compat/bevy: Bevy 0.20.0, the same pin as the game), which loads
-each file through Bevy's own glTF loader with no window or GPU, spawns
-the default scene and requires every declared skin to become SkinnedMesh
-entities with joint indices and weights.
+Runs glbkit's Bevy compatibility checker (sibling `rfcheck` repo,
+`glbkit/compat/bevy`: Bevy 0.20.0), which loads each file through Bevy's own
+glTF loader with no window or GPU, spawns the default scene, and requires every
+declared skin to become SkinnedMesh entities with joint indices and weights.
 
-Checker binary: $BEVY_GLB_CHECK, else the build-tree default
-~/Games/_blender/rfcheck/glbkit/compat/bevy/target/release/examples/check (build it
-with `cargo build --release --example check` in that folder; Bevy is a
-long first build).
+Checker binary: $BEVY_GLB_CHECK, else the sibling build-tree default
+`../rfcheck/glbkit/compat/bevy/target/release/examples/check` (build it with
+`cargo build --release --example check` in that folder; Bevy is a long first
+build).
 
 Exit 0: every file loads with its skins. Exit 1: a file failed. Exit 2:
-no checker binary (callers skip). Replaces the Godot import check, which
-went away when the games moved off Godot (2026-10-05).
+no checker binary (callers skip).
 """
 
 import os
 import subprocess
 import sys
 
-DEFAULT = os.path.expanduser(
-    "~/Games/_blender/rfcheck/glbkit/compat/bevy/target/release/examples/check"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT = os.path.join(
+    os.path.dirname(ROOT),
+    "rfcheck",
+    "glbkit",
+    "compat",
+    "bevy",
+    "target",
+    "release",
+    "examples",
+    "check",
 )
 
 

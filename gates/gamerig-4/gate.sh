@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Gate for gamerig-4: stale facts out (Bevy 0.20.0 pin, no Day-0 README claim, Godot items in
-# TODO.md History, ruff clean).
+# Gate for gamerig-4: stale facts out (Bevy 0.20.0 pin, no Day-0 README claim, legacy items
+# archived in docs/archive/TODO.md History, ruff clean).
 set -u
 cd "$(git rev-parse --show-toplevel)" || exit 2
 FAILS=0
@@ -33,27 +33,27 @@ else
   grep -n "Day-0" README.md | show
 fi
 
-echo "== no 0.19 or Godot 4 in README.md, tools/, AGENTS.md"
-hits=$(grep -rn "0\.19\|Godot 4" README.md tools AGENTS.md || true)
+echo "== no Bevy 0.19 / 0.19.1 or legacy engine refs in README.md, tools/, AGENTS.md"
+hits=$(grep -rnE "Bevy 0\.19|0\.19\.[0-9]" README.md tools AGENTS.md || true)
 if [ -z "$hits" ]; then
-  pass "README.md, tools/, AGENTS.md have no 0.19 or Godot 4 hits"
+  pass "README.md, tools/, AGENTS.md have no 0.19.x hits"
 else
-  fail "stale 0.19 or Godot 4 hits in README.md / tools / AGENTS.md:"
+  fail "stale 0.19.x hits in README.md / tools / AGENTS.md:"
   echo "$hits" | show
 fi
 
-echo "== TODO.md: Godot 4 items moved under ## History, no 0.19 in live items"
-if grep -q "^## History" TODO.md; then
-  live=$(sed '/^## History/,$d' TODO.md)
-  bad=$(printf '%s\n' "$live" | grep -n "0\.19\|Godot 4" || true)
+echo "== docs/archive/TODO.md: legacy items under ## History, no 0.19.x in live items"
+if grep -q "^## History" docs/archive/TODO.md; then
+  live=$(sed '/^## History/,$d' docs/archive/TODO.md)
+  bad=$(printf '%s\n' "$live" | grep -nE "Bevy 0\.19|0\.19\.[0-9]" || true)
   if [ -z "$bad" ]; then
-    pass "TODO.md live sections have no 0.19 or Godot 4 hits (moved under ## History)"
+    pass "docs/archive/TODO.md live sections have no 0.19.x hits (archived under ## History)"
   else
-    fail "TODO.md still has 0.19 or Godot 4 above ## History:"
+    fail "docs/archive/TODO.md still has 0.19.x above ## History:"
     echo "$bad" | show
   fi
 else
-  fail "TODO.md has no ## History section"
+  fail "docs/archive/TODO.md has no ## History section"
 fi
 
 echo "== ruff lint + format"

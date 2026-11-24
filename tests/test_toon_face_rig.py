@@ -1,20 +1,20 @@
 # SPDX-FileCopyrightText: 2026 rigforge contributors
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Headless test: biped_hero face rig on a procedural Brell toon fixture (gamerig-6).
+"""Headless test: biped_hero face rig on a procedural toon fixture (gamerig-6).
 
 Run (from the repo root):
-    tools/run_test.sh tests/test_brell_face_rig.py
+    tools/run_test.sh tests/test_toon_face_rig.py
     # or on the bpy wheel:
-    python tools/run_test_bpy.py tests/test_brell_face_rig.py
+    python tools/run_test_bpy.py tests/test_toon_face_rig.py
 
 Proves biped_hero auto-placement, face rig generation, geodesic voxel weighting,
 jaw/eyelid/brow vertex displacement, no-face-rig control baseline, clean FULL +
 MOBILE GLB exports (with baked face animations on FULL), optional rfcheck/weights
-verification, and side-by-side Brell talk-camera sheet rendering.
+verification, and side-by-side talk-camera sheet rendering.
 
-Pass criteria: exits 0, writes /tmp/gamerig_6_brell_face_sheet.png, and prints
-RIGFORGE_BRELL_FACE_OK.
+Pass criteria: exits 0, writes /tmp/gamerig_6_toon_face_sheet.png, and prints
+RIGFORGE_TOON_FACE_OK.
 """
 
 import importlib.util
@@ -32,13 +32,13 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(ROOT, "tools")
 
-FULL_GLB = "/tmp/gamerig_6_brell_face_full.glb"
-MOBILE_GLB = "/tmp/gamerig_6_brell_face_mobile.glb"
-SHEET_PNG = "/tmp/gamerig_6_brell_face_sheet.png"
+FULL_GLB = "/tmp/gamerig_6_toon_face_full.glb"
+MOBILE_GLB = "/tmp/gamerig_6_toon_face_mobile.glb"
+SHEET_PNG = "/tmp/gamerig_6_toon_face_sheet.png"
 
 
 def fail(msg):
-    print("RIGFORGE_BRELL_FACE_FAIL:", msg)
+    print("RIGFORGE_TOON_FACE_FAIL:", msg)
     sys.exit(1)
 
 
@@ -48,8 +48,8 @@ def check(cond, msg):
 
 
 def load_fixture_mod():
-    path = os.path.join(TOOLS, "brell_face_fixture.py")
-    spec = importlib.util.spec_from_file_location("brell_face_fixture", path)
+    path = os.path.join(TOOLS, "toon_face_fixture.py")
+    spec = importlib.util.spec_from_file_location("toon_face_fixture", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -130,8 +130,8 @@ def main():
 
     fx = load_fixture_mod()
 
-    # 1. Build procedural Brell toon-proportioned fixture (~0.27 head ratio)
-    mesh, spec = fx.build_brell_fixture()
+    # 1. Build procedural toon-proportioned fixture (~0.27 head ratio)
+    mesh, spec = fx.build_toon_fixture()
     verts_world = [mesh.matrix_world @ v.co for v in mesh.data.vertices]
     zmin = min(p.z for p in verts_world)
     zmax = max(p.z for p in verts_world)
@@ -150,7 +150,7 @@ def main():
         bm.free()
     check(
         not non_manifold,
-        f"Brell fixture not watertight manifold: {len(non_manifold)} non-manifold edges",
+        f"toon fixture not watertight manifold: {len(non_manifold)} non-manifold edges",
     )
 
     regions = fx.face_vertex_regions(mesh)
@@ -162,24 +162,24 @@ def main():
     )
 
     # Keep a clean unrigged copy for the no-face-rig control comparison
-    ctrl_mesh = duplicate_mesh_clean(mesh, "BrellControlMesh")
+    ctrl_mesh = duplicate_mesh_clean(mesh, "ToonControlMesh")
     ctrl_mesh.hide_render = True
     ctrl_mesh.hide_viewport = True
 
-    # 2. Add biped_hero metarig and auto-place onto the Brell toon fixture
+    # 2. Add biped_hero metarig and auto-place onto the toon fixture
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.rigforge_biped_hero_metarig_add()
     meta = bpy.context.view_layer.objects.active
-    meta.name = "BrellHeroMetarig"
+    meta.name = "ToonHeroMetarig"
 
     bpy.ops.object.select_all(action="DESELECT")
     mesh.select_set(True)
     meta.select_set(True)
     bpy.context.view_layer.objects.active = meta
     res = bpy.ops.wm.rigforge_auto_place()
-    check("FINISHED" in res, f"auto_place failed on Brell fixture: {res}")
+    check("FINISHED" in res, f"auto_place failed on toon fixture: {res}")
 
-    # Verify face metarig placement matches Brell toon head proportions (~0.27 ratio)
+    # Verify face metarig placement matches stylized toon head proportions (~0.27 ratio)
     face_bones = [
         b
         for b in meta.data.bones
@@ -252,7 +252,7 @@ def main():
     # the no-face-rig control from the exact same body fit.
     ctrl_meta = meta.copy()
     ctrl_meta.data = meta.data.copy()
-    ctrl_meta.name = "BrellNoFaceMetarig"
+    ctrl_meta.name = "ToonNoFaceMetarig"
     bpy.context.scene.collection.objects.link(ctrl_meta)
 
     # 3. Generate full biped_hero rig and bind weights with voxel auto-weights
@@ -272,7 +272,7 @@ def main():
         None,
     )
     check(rig is not None, "biped_hero generate produced no rig")
-    rig.name = "BrellHeroRig"
+    rig.name = "ToonHeroRig"
 
     required_ctrls = (
         "jaw_master",
@@ -539,7 +539,7 @@ def main():
     bpy.ops.pose.rigforge_generate()
     ctrl_rig = ctrl_meta.data.rigforge_target_rig
     check(ctrl_rig is not None, "no-face control generate produced no rig")
-    ctrl_rig.name = "BrellNoFaceRig"
+    ctrl_rig.name = "ToonNoFaceRig"
     for absent in ("jaw_master", "lid.T.L.002", "brow.T.L.002"):
         check(absent not in ctrl_rig.pose.bones, f"control rig leaked {absent}")
     for absent_def in ("DEF-jaw", "DEF-lid.T.L.002", "DEF-brow.T.L.002"):
@@ -561,7 +561,7 @@ def main():
     scene = bpy.context.scene
     scene.frame_start = 1
     scene.frame_end = 30
-    action = bpy.data.actions.new("BrellFaceExpr")
+    action = bpy.data.actions.new("ToonFaceExpr")
     rig.animation_data_create()
     rig.animation_data.action = action
     key_bones = (
@@ -656,8 +656,11 @@ def main():
     print(f"MOBILE GLB OK: {len(mob_joints)} kept joints (face merged up)")
 
     # Optional external checks (rfcheck and meshweights weights check)
+    sibling_dir = os.path.dirname(ROOT)
     rfcheck = find_bin(
-        "RFCHECK", "rfcheck", "~/Games/_blender/rfcheck/target/release/rfcheck"
+        "RFCHECK",
+        "rfcheck",
+        os.path.join(sibling_dir, "rfcheck", "target", "release", "rfcheck"),
     )
     if rfcheck:
         proc = subprocess.run(
@@ -674,7 +677,9 @@ def main():
     weights_bin = find_bin(
         "WEIGHTS_BIN",
         "weights",
-        "~/Games/_blender/meshweights/rust/target/release/weights",
+        os.path.join(
+            sibling_dir, "meshweights", "rust", "target", "release", "weights"
+        ),
     )
     if weights_bin:
         proc = subprocess.run(
@@ -717,7 +722,7 @@ def main():
     else:
         print("weights check: skipped (weights binary not present in environment)")
 
-    # 7. Render side-by-side comparison PNG at Brell's talk camera
+    # 7. Render side-by-side comparison PNG at the talk camera
     if os.path.exists(SHEET_PNG):
         os.remove(SHEET_PNG)
 
@@ -771,7 +776,7 @@ def main():
         bpy.data.images.remove(img)
 
     print(f"sheet OK: {SHEET_PNG} ({os.path.getsize(SHEET_PNG)} bytes)")
-    print("RIGFORGE_BRELL_FACE_OK")
+    print("RIGFORGE_TOON_FACE_OK")
 
 
 if __name__ == "__main__":

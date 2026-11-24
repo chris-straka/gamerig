@@ -4,9 +4,9 @@ Make gamerig's hint tests use fixtures owned here and run every time
 
 `tests/test_auto_placement.py` reads two joint samples from other repos
 and skips its checks when they are missing: block 10h (lines 690-754)
-reads `~/Games/_blender/unirig-mac/tools/joints_samples/stalker_seed42.json`
-(a retired repo), block 10i (lines 756-801) reads
-`~/Games/_blender/skintokens/tools/joints_samples/stalker_seed0.json`.
+reads a local `unirig-mac` joint sample (`stalker_seed42.json`,
+a retired repo), block 10i (lines 756-801) reads a local `skintokens`
+joint sample (`stalker_seed0.json`).
 Copies of both are now committed here as
 `tests/fixtures/hints/unirig_stalker_seed42.json` and
 `tests/fixtures/hints/skintokens_stalker_seed0.json`.

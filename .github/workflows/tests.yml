@@ -26,7 +26,7 @@ jobs:
           python-version: "3.11"
       - run: pip install ruff
       # Repo-wide format is clean; lint debt stays in upstream files
-      # (see TODO), so only formatting gates here.
+      # (see docs/archive/TODO.md), so only formatting gates here.
       - run: ruff format --check .
       - name: Every suite is in the matrix
         run: |
@@ -47,7 +47,6 @@ jobs:
           - test_auto_place
           - test_auto_placement
           - test_auto_rig_sh
-          - test_brell_face_rig
           - test_callers
           - test_cleanup
           - test_diagnose
@@ -57,6 +56,7 @@ jobs:
           - test_presets
           - test_rename
           - test_retarget
+          - test_toon_face_rig
           - test_transfer
           - test_voxel_weights
           - test_weights_w1

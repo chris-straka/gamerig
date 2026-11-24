@@ -17,7 +17,7 @@ Headless, from the repo root (addon overlay needed for generate+export):
 Live validation with a real Mixamo clip:
 
     1. Download any animation FBX from mixamo.com ("Skin: Without Skin" is fine).
-    2. Pass `--source ~/Downloads/<clip>.fbx --out /tmp/<clip>.glb`.
+    2. Pass `--source <path>/<clip>.fbx --out /tmp/<clip>.glb`.
     3. Binary discovery: `--motionforge PATH`, `$MOTIONFORGE_BIN`, `PATH`, or
        sibling `../motion/rust/target/release/motionforge`.
 """
@@ -389,8 +389,6 @@ def _sibling_motionforge_candidates():
     return [
         os.path.join(motion_root, "rust", "target", "release", "motionforge"),
         os.path.join(motion_root, "rust", "target", "debug", "motionforge"),
-        os.path.expanduser("~/Games/_blender/motion/rust/target/release/motionforge"),
-        os.path.expanduser("~/rigwork/bin/motionforge"),
     ]
 
 
@@ -402,7 +400,7 @@ def find_motionforge_binary(explicit_path="", search_sibling=True):
             return path
         raise RuntimeError(
             f"--motionforge binary not found or not executable: {path} "
-            "(set MOTIONFORGE_BIN or build ~/Games/_blender/motion/rust)"
+            "(set MOTIONFORGE_BIN or build sibling ../motion/rust)"
         )
 
     env_path = os.environ.get("MOTIONFORGE_BIN", "").strip()
@@ -426,8 +424,8 @@ def find_motionforge_binary(explicit_path="", search_sibling=True):
 
     raise RuntimeError(
         "motionforge binary not found: set MOTIONFORGE_BIN, pass "
-        "--motionforge PATH, put motionforge on PATH, or build "
-        "~/Games/_blender/motion/rust (cargo build --release --bin motionforge)"
+        "--motionforge PATH, put motionforge on PATH, or build sibling "
+        "../motion/rust (cargo build --release --bin motionforge)"
     )
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Gate for gamerig-6: Brell toon face rig verification (`biped_hero`).
-# Runs tests/test_brell_face_rig.py in Blender, checks ruff lint/format on touched
+# Gate for gamerig-6: Toon face rig verification (`biped_hero`).
+# Runs tests/test_toon_face_rig.py in Blender, checks ruff lint/format on touched
 # files, runs optional weights/rfcheck checks on the exported GLB if available,
-# and copies /tmp/gamerig_6_brell_face_sheet.png into $FLEET_ARTIFACTS.
+# and copies /tmp/gamerig_6_toon_face_sheet.png into $FLEET_ARTIFACTS.
 #   fleet run --snapshot --worktree --needs blender -- bash gates/gamerig-6/gate.sh
 set -u
 cd "$(git rev-parse --show-toplevel)" || exit 2
@@ -35,7 +35,7 @@ fi
 if [ -z "$RUFF" ]; then
   echo "WARN  ruff not found on worker; skipping lint check"
 else
-  CHECK_FILES=(tools/brell_face_fixture.py tests/test_brell_face_rig.py)
+  CHECK_FILES=(tools/toon_face_fixture.py tests/test_toon_face_rig.py)
   if git diff --name-only origin/main...HEAD -- rigforge/ | grep -q '\.py$'; then
     while IFS= read -r pyf; do
       [ -f "$pyf" ] && CHECK_FILES+=("$pyf")
@@ -49,7 +49,7 @@ else
   fi
 fi
 
-echo "== Blender test_brell_face_rig.py"
+echo "== Blender test_toon_face_rig.py"
 BL=${BLENDER_BIN:-}
 [ -z "$BL" ] && BL=$(command -v blender || true)
 for c in /Applications/Blender.app/Contents/MacOS/Blender "$HOME/Applications/Blender.app/Contents/MacOS/Blender"; do
@@ -60,41 +60,41 @@ if [ -z "$BL" ]; then
 else
   mkdir -p "$T/rf_scripts/addons"
   cp -R rigforge "$T/rf_scripts/addons/rigforge"
-  rm -f /tmp/gamerig_6_brell_face_sheet.png /tmp/gamerig_6_brell_face_full.glb /tmp/gamerig_6_brell_face_mobile.glb
-  if BLENDER_USER_SCRIPTS="$T/rf_scripts" "$BL" --background --factory-startup --python-exit-code 1 --python tests/test_brell_face_rig.py > "$T/test.out" 2>&1; then
-    if grep -q '^RIGFORGE_BRELL_FACE_OK' "$T/test.out"; then
-      pass "test_brell_face_rig.py"
+  rm -f /tmp/gamerig_6_toon_face_sheet.png /tmp/gamerig_6_toon_face_full.glb /tmp/gamerig_6_toon_face_mobile.glb
+  if BLENDER_USER_SCRIPTS="$T/rf_scripts" "$BL" --background --factory-startup --python-exit-code 1 --python tests/test_toon_face_rig.py > "$T/test.out" 2>&1; then
+    if grep -q '^RIGFORGE_TOON_FACE_OK' "$T/test.out"; then
+      pass "test_toon_face_rig.py"
     else
-      fail "test_brell_face_rig.py missing RIGFORGE_BRELL_FACE_OK"
+      fail "test_toon_face_rig.py missing RIGFORGE_TOON_FACE_OK"
       tail -n 25 "$T/test.out" | show
     fi
   else
-    fail "test_brell_face_rig.py exited non-zero"
+    fail "test_toon_face_rig.py exited non-zero"
     tail -n 30 "$T/test.out" | show
   fi
 fi
 
 echo "== comparison sheet artifact"
-SHEET="/tmp/gamerig_6_brell_face_sheet.png"
+SHEET="/tmp/gamerig_6_toon_face_sheet.png"
 if [ -s "$SHEET" ]; then
   pass "comparison sheet present ($SHEET)"
   if [ -n "${FLEET_ARTIFACTS:-}" ]; then
     mkdir -p "$FLEET_ARTIFACTS"
-    cp "$SHEET" "$FLEET_ARTIFACTS/gamerig_6_brell_face_sheet.png"
-    pass "copied sheet to \$FLEET_ARTIFACTS/gamerig_6_brell_face_sheet.png"
+    cp "$SHEET" "$FLEET_ARTIFACTS/gamerig_6_toon_face_sheet.png"
+    pass "copied sheet to \$FLEET_ARTIFACTS/gamerig_6_toon_face_sheet.png"
   fi
 else
   fail "comparison sheet missing at $SHEET"
 fi
 
 echo "== optional weights / rfcheck inspection"
-FULL_GLB="/tmp/gamerig_6_brell_face_full.glb"
+FULL_GLB="/tmp/gamerig_6_toon_face_full.glb"
 if [ -s "$FULL_GLB" ]; then
   if [ -n "${FLEET_ARTIFACTS:-}" ]; then
-    cp "$FULL_GLB" "$FLEET_ARTIFACTS/gamerig_6_brell_face_full.glb"
+    cp "$FULL_GLB" "$FLEET_ARTIFACTS/gamerig_6_toon_face_full.glb"
   fi
   WEIGHTS=${WEIGHTS_BIN:-$(command -v weights || true)}
-  [ -z "$WEIGHTS" ] && [ -x "$HOME/Games/_blender/meshweights/rust/target/release/weights" ] && WEIGHTS="$HOME/Games/_blender/meshweights/rust/target/release/weights"
+  [ -z "$WEIGHTS" ] && [ -x "../meshweights/rust/target/release/weights" ] && WEIGHTS="../meshweights/rust/target/release/weights"
   if [ -n "$WEIGHTS" ]; then
     if "$WEIGHTS" check "$FULL_GLB" --json > "$T/weights.json" 2> "$T/weights.err"; then
       pass "weights check clean (rc=0)"
