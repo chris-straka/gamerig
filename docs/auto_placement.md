@@ -8,7 +8,7 @@ quadruped pipeline and unirig-hints ingestion (see Section 10).
 
 ## 1. The gap (what "zero-touch" means here)
 
-The bake-off ([bakeoff/final.md](bakeoff/final.md))
+The bake-off ([archive/bakeoff/final.md](archive/bakeoff/final.md))
 split the verdict three ways:
 
 | | rigforge | unirig-mac | Mixamo |
@@ -29,7 +29,7 @@ template to the mesh; it does not invent topology.
 
 ## 2. Findings: how unirig places joints (read-only study)
 
-Source: `~/Games/_blender/unirig-mac` tree (another session owns it; nothing written
+Source: the retired UniRig port (read-only architectural study; nothing written
 there) + its PORT.md / bake-off half.
 
 - **Skeleton stage** (`src/model/unirig_ar.py`): a GPT-like causal
@@ -386,7 +386,7 @@ warn, toes/face warn-quiet with diagnostics, head ok.
 ## 9. Fitter follow-ups: production meshes through the strict gate
 
 The Section 8 gate failed every production mesh (reference hero: toe margin;
-Hunyuan elf: shoulder/foot/toe outside; Hunyuan millennial: untested
+generated elf: shoulder/foot/toe outside; generated millennial: untested
 merge case). All fixes below are fitter-side
 (`tools/fit_metarig.py`); the gate's thresholds and verdicts are
 untouched — where a threshold looked suspect it was held and the
@@ -674,19 +674,19 @@ Verified: `tests/test_auto_place.py` green (`RIGFORGE_AUTOPLACE_UI_OK`);
 game-export, rename, retarget suites green; `ruff check` + `ruff
 format --check` clean on all touched files (the two `ui.py` findings
 are pre-existing HEAD debt). Bake-off re-run with the fitter:
-[rerun.md](bakeoff/rerun.md) — fit-delta 0.0, ~12 s / ~9 s wall.
+[archive/bakeoff/rerun.md](archive/bakeoff/rerun.md) — fit-delta 0.0, ~12 s / ~9 s wall.
 
 ## 12. Hint source: SkinTokens (2026-10-05)
 
-unirig-mac is retired; the ML hint source is now `~/Games/_blender/skintokens`
-(SkinTokens/TokenRig, UniRig's successor). `skintokens joints RIG.glb
+unirig-mac is retired; the ML hint source is now SkinTokens/TokenRig
+(`skintokens` CLI, UniRig's successor). `skintokens joints RIG.glb
 OUT.json` writes `skintokens-joints/1`: the unirig-joints/1 schema
 (names, parents, world + bbox-normalized positions, null confidence)
 under its own name. `unirig_hints.load_hints` accepts both formats; the
 module and CLI keep their names so every argv and import stays valid.
 
 Measured on the quadruped stalker (`tests/test_auto_placement.py` §10i, sample
-`skintokens/tools/joints_samples/stalker_seed0.json`, 11 joints): every
+`tests/fixtures/hints/skintokens_stalker_seed0.json`, 11 joints): every
 joint classified, 0 trusted, 0 supporting, 11 measurement-wins, and the
 hinted fit still gates strict. UniRig's seed-42 sample scored 1 trusted +
 1 supporting + 8 measurement-wins on the same landmarks. Neither changes

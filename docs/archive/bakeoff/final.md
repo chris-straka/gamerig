@@ -1,7 +1,8 @@
 # Bake-off final: rigforge vs unirig-mac vs Mixamo (stylized hero)
 
-Date: 2026-09-30. Inputs differ slightly (see caveats). All three import
-clean in Godot 4.7.1 headless.
+Date: 2026-09-30. Inputs differ slightly (see caveats). All three imported
+cleanly in the prior game-engine headless check (archived; project now targets
+Bevy 0.20.0).
 
 |                       | rigforge        | unirig-mac      | Mixamo          |
 |-----------------------|-----------------|-----------------|-----------------|
@@ -12,7 +13,7 @@ clean in Godot 4.7.1 headless.
 | wall time             | ~30 min scripted| ~7 min, 0 touch | ~15 min web UI  |
 | skin                  | auto-weights    | 86.4% self-chk  | ML auto-rigger  |
 | anims in GLB          | BakeAnim        | none            | T-pose clip     |
-| Godot import          | ok              | ok              | ok              |
+| engine import         | ok              | ok              | ok              |
 | rfcheck               | clean           | R_JOINT_PREFIX  | R_JOINT_PREFIX  |
 | creature (stalker)    | 80 bones, clean | 12 jnts, weak   | N/A (biped only)|
 | runs                  | local (Blender) | local (torch)   | Adobe cloud     |
@@ -37,15 +38,13 @@ clean in Godot 4.7.1 headless.
 
 ## Artifacts (not committed)
 
-Binaries stay out of the repo. Originals live in `~/Downloads/bakeoff/`
-(GLB/FBX/PNG) and `/tmp/bakeoff/` (unirig GLBs, Godot-checked GLBs);
-`/tmp` does not survive a reboot. Interim rigforge notes:
+Binaries stay out of the repo. Originals were kept outside git
+under `/tmp/bakeoff/` (does not survive a reboot). Interim rigforge notes:
 [rigforge_half.md](rigforge_half.md).
 
-
-- rigforge_hero.glb / rf_hero_fit_*.png — rigforge hero
-- unirig GLBs in /tmp/bakeoff (peer originals), fit PNGs here
-- mixamo_hero_v3_t_pose.fbx — Mixamo rigged download
-- mixamo_hero.glb in /tmp/bakeoff/godot — Godot-checked GLB
-- mixamo_fit_front.png — Mixamo result preview
-- mixamo_hero_v4.fbx — unused fallback (v3 worked)
+- `rigforge_hero.glb` / `rf_hero_fit_*.png` — rigforge hero
+- unirig GLBs and fit PNGs
+- `mixamo_hero_v3_t_pose.fbx` — Mixamo rigged download
+- `mixamo_hero.glb` — engine-checked GLB
+- `mixamo_fit_front.png` — Mixamo result preview
+- `mixamo_hero_v4.fbx` — unused fallback (v3 worked)

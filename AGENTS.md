@@ -1,56 +1,49 @@
-# gamerig (add-on `rigforge`) — agent notes
+# gamerig (add-on `rigforge`) — Agent Standing Rules
 
-One rules file only: this `AGENTS.md` is it — never create a `CLAUDE.md` in this folder (Muse ignores it and warns while both exist).
+One rules file only: this `AGENTS.md` is it — never create a `CLAUDE.md` in
+this folder.
 
-Fork of Blender's Rigify (0.6.10, copied from the Blender 5.2 app
-bundle), module renamed `rigforge` to coexist with bundled Rigify.
-Goal: game-ready rigs for Bevy (Rust) game characters and creatures —
-beat upstream on auto-placement, skinning, presets, and export.
+Fork of Blender's Rigify (0.6.10, copied from the Blender 5.2 app bundle),
+module-renamed `rigforge` so it coexists with bundled Rigify. Built as a
+standalone multi-game rigging add-on and CLI pipeline targeting game-ready rigs
+(Bevy / Rust GLB export, auto-placement, voxel/assisted weights, presets).
 
 ## Standing rules
 
-- License is GPL-2.0-or-later (same as upstream). Never mix in
-  MIT/permissive code with the intent to keep it permissive — this
-  tree is GPL, like all Blender addons.
-- The headless smoke test must stay green: `BLENDER_USER_SCRIPTS`
-  overlay + enable + human metarig + generate (see README; canonical
-  script is `tests/smoke.py`, also run by CI on every PR).
-- Blender binary: `/Applications/Blender.app/Contents/MacOS/Blender`.
-  Headless only unless the user approves a GUI launch.
-- Remote: `github.com/chris-straka/gamerig` (public since
-  2026-10-01). License file: `COPYING`
-  (GPL-2.0 text; the tree is GPL-2.0-or-later per the SPDX headers).
-  Nothing secret may enter this repo: no tokens, no game assets, no
-  private paths beyond the owner's documented machine setup. Commit
-  and push to `origin/main` on your own after each completed chunk of
-  work; don't wait for approval (standing authorization from the
-  owner, 2026-10-01, re-confirmed for public). Never force-push or
-  rewrite published history.
-- Lint gate: `ruff check .` and `ruff format --check .` must be clean
-  on files you touch (config: `ruff.toml`). The tree carries
-  pre-existing lint debt (see TODO); don't bulk-fix outside your
-  change, do leave your files clean.
+- **License:** GPL-2.0-or-later (same as upstream; see [COPYING](COPYING)).
+  Never mix in MIT/permissive code with the intent to keep it permissive —
+  this tree is GPL, like all Blender add-ons.
+- **Public repo privacy:** `github.com/chris-straka/gamerig` is PUBLIC. Never
+  commit secrets, tokens, game assets, private game/character names, machine
+  hostnames, or personal filesystem paths. Resolve optional external binaries
+  via environment variables (`BLENDER_BIN`, `BEVY_GLB_CHECK`, `MOTIONFORGE_BIN`,
+  `RFCHECK`, `WEIGHTS_BIN`), `PATH`, or relative sibling directories.
+- **Smoke test & CI matrix:** `tests/smoke.py` and all `tests/test_*.py`
+  suites must stay green under `tools/run_test.sh` and `tools/run_test_bpy.py`.
+  Every new `tests/test_*.py` file must be added to the matrix in
+  [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+- **Blender binary:** headless only (`BLENDER_BIN`, `blender` on `PATH`, or
+  `/Applications/Blender.app/Contents/MacOS/Blender` on macOS) unless the user
+  approves a GUI launch.
+- **Lint & format gate:** `ruff check` and `ruff format --check .` must be
+  clean on all files you touch (config: [`ruff.toml`](ruff.toml)). Pristine
+  upstream-fork files carry intentional pre-existing lint debt (see
+  [docs/archive/TODO.md](docs/archive/TODO.md)); do not bulk-reformat untouched
+  upstream files, and leave every file you touch clean.
 
-## Siblings (separate repos, separate sessions)
+## External tool boundaries (separate repos, subprocess/data only)
 
-- `~/Games/_blender/retopo` — mesh stage (MIT engine + GPL extension).
-  Strategy hub: `retopo/docs/rigging-strategy.md`. Read it first.
-- `~/Games/_blender/skintokens` — ML rigger (SkinTokens/TokenRig, UniRig's
-  successor; Rust since 2026-10-05; MIT code and weights, the
-  Michelangelo-derived encoder is its own GPL-3.0 crate, so never call
-  the binary MIT-clean). The optional joint-hints source since
-  2026-10-05: `skintokens joints` writes skintokens-joints/1, which
-  `--hints` reads (coordinates in, never code).
-- `~/Games/_blender/unirig-mac` — retired 2026-10-05 (replaced by
-  skintokens). Its unirig-joints/1 files still load as legacy hints.
-  The bake-off (docs/bakeoff/final.md) went to rigforge on hero and
-  creature quality either way.
-- The games (`~/Games/<game>`, Bevy, Rust) supply the real-mesh test
-  subjects; never commit game assets into this repo.
-- `~/Games/_blender/motion` (`motionforge` CLI) owns retargeting and
-  animation cleanup (`gamerig-5`): `tools/retarget_mixamo.py` imports/normalizes
-  Mixamo clips and delegates `standardize` + `animate` to `motionforge` rather
-  than maintaining duplicated Python retarget math.
-- NOTE (2026-09-30): other agent sessions are active in this area
-  (`retopo`, `SWE` workspaces). Check `git status`/`git log`
-  before assuming a tree is yours alone.
+- **Mesh & deformation benchmarks (`retopo`):** mesh preprocessing and
+  deformation-test methodology live externally; `gamerig` keeps only synthetic
+  and procedural test fixtures in `tests/`.
+- **ML joint hints (`skintokens`):** optional coordinates-only `skintokens-joints/1`
+  JSON hints (`skintokens joints`), plus legacy `unirig-joints/1` data fixtures
+  under `tests/fixtures/hints/` (coordinates in, never external code).
+- **Retargeting & motion cleanup (`motionforge`):** `tools/retarget_mixamo.py`
+  imports/normalizes Mixamo clips and delegates `standardize` and `animate` to
+  the `motionforge` CLI (`MOTIONFORGE_BIN` or sibling `../motion` checkout).
+- **GLB & weight checks (`rfcheck`, `weights`, Bevy compat):** optional external
+  validators discovered via env vars or sibling checkouts; tests skip cleanly
+  when absent.
+- **Game subjects:** never commit private game meshes, textures, or rigs into
+  this repository.

@@ -2,10 +2,9 @@
 
 ## Active / parked maintenance
 
-- [x] The games moved to Bevy (2026-10-05; pinned to Bevy 0.20.0 in
-      `rfcheck/glbkit/compat/bevy` via `rfcheck-1`):
-      `tools/bevy_import_check.py` runs glbkit's headless Bevy 0.20.0 loader
-      (skipped when not built); docs say Bevy.
+- [x] Export/loader checks target Bevy 0.20.0 (2026-10-05; pinned in
+      `rfcheck/glbkit/compat/bevy`): `tools/bevy_import_check.py` runs
+      glbkit's headless Bevy 0.20.0 loader (skipped when not built).
 - [x] Caller contract (`gamerig-1`, 2026-11-19): `tests/test_callers.py`
       covers `bodywrap`'s landmark detector + `biped_hero` regeneration and
       `assetgen`'s `genforge_adapter.sh repair-rig`; in CI's matrix.
@@ -70,20 +69,20 @@
 - [x] tools/run_test_bpy.py (2026-10-03): run any suite on the `bpy`
       pip wheel (no Blender install); used for the entries above.
 
-## History (Godot era and early milestones)
+## History (early milestones)
 
 - [x] Day 0: pristine 0.6.10 copy, headless register + metarig + generate
 - [x] Rename pass: module rigify -> rigforge (ids + generated imports),
       coexists with bundled Rigify (smoke loads our copy, generates 706 bones)
-- [x] One-click game export: deform-bones-only GLB with Godot settings
-      (`wm.rigforge_game_export`, Armature panel button, tests/test_game_export.py)
+- [x] One-click game export: deform-bones-only GLB export (`wm.rigforge_game_export`,
+      Armature panel button, `tests/test_game_export.py`)
 - [x] rigforge presets: stylized biped + creature metarig starting points
       (biped_hero + quadruped_stalker, built by tools/make_presets.py,
       covered by tests/test_presets.py; baked-anim export in
       tests/test_game_export.py)
 - [x] Bake-off vs retired unirig-mac on one hero + one creature (joints,
-      weights, tweak time, Godot import). Done 2026-09-30, results in
-      docs/bakeoff/final.md: rigforge won hero and creature quality,
+      weights, tweak time, engine import). Done 2026-09-30, results in
+      docs/archive/bakeoff/final.md: rigforge won hero and creature quality,
       unirig won only zero-touch time; Mixamo added as baseline.
 - [x] Auto-placement research: deterministic landmark detector +
       metarig fitter + validation gate for hero and quadruped, joint
@@ -92,9 +91,9 @@
       the headless fitter; docs/auto_placement.md section 11,
       tests/test_auto_place.py)
 - [x] Re-run the bake-off comparison with the fitter in the loop
-      (docs/bakeoff/rerun.md: fit-delta 0.0 on both subjects,
+      (docs/archive/bakeoff/rerun.md: fit-delta 0.0 on both subjects,
       11.6 s / 9.3 s wall, zero touch — under unirig's ~7 min)
-- [x] Fork-or-add-on audit (docs/fork-audit.md, 2026-10-02):
+- [x] Fork-or-add-on audit (docs/archive/fork-audit.md, 2026-10-02):
       verdict is companion-feasible — zero functional edits inside
       Rigify's own files (renames + ruff autofixes proven mechanical,
       stock-vs-fork human rigs bit-identical at 706 bones / 198
@@ -106,19 +105,17 @@
       (Full/Mobile buttons) merges 95 face+twist DEF bones up to kept
       ancestors (face roots ride the topmost kept bone) on temp copies
       — 160 -> 65 joints, originals untouched, anims on kept joints.
-      Both GLBs imported clean in headless Godot 4.7.1 (160/65 bones)
-      before the Bevy migration. In-game FPS-side skinning measurement
-      stays a game-side step (needs a game's scenes + profiler).
+      Both GLBs imported clean in headless engine checks (160/65 bones).
+      In-game FPS-side skinning measurement stays a game-side step
+      (needs a game's scenes + profiler).
 - [x] Public-repo follow-ups (2026-10-02): smart paths where cheap
-      (BLENDER_BIN env override with this machine's Blender as
-      default, tools/run_test.sh runner, skip-if-missing for
-      external-asset suites); this rig stays the target, no
-      portability crusade.
+      (BLENDER_BIN env override, tools/run_test.sh runner, skip-if-missing for
+      external-asset suites).
 - [x] genforge repair-rig adapter (2026-10-05): tools/genforge_adapter.sh
       wraps auto_rig.py in genforge's adapter contract (README);
       tests/test_genforge_adapter.py (broken one-bone rig -> 160 DEF).
 - [x] Game-export depth (2026-10-02): validate_export fails early
       (unweighted mesh, no DEF bones) + warns (partial weights,
       negative scale, mobile >4 influences); mobile cap-4 toggle
-      (panel checkbox, auto-fix on copies); Godot 4.7.1 import check
-      (removed 2026-10-05 when replaced by `tools/bevy_import_check.py`).
+      (panel checkbox, auto-fix on copies); replaced legacy engine import
+      check (2026-10-05) with `tools/bevy_import_check.py`.

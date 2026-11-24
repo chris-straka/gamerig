@@ -2,7 +2,7 @@
 
 Workflow per subject, fully headless: rigforge preset metarig (used as
 shipped, no per-subject tweaking) -> generate -> bone-heat bind ->
-one-click game export -> rfcheck -> Godot 4.7.1 import.
+one-click game export -> rfcheck -> headless engine import check.
 
 ## Hero (97k-vert mesh)
 
@@ -10,7 +10,7 @@ one-click game export -> rfcheck -> Godot 4.7.1 import.
 - Timings: generate 2s, heat bind 20s, export 2s (~24s machine time).
 - Weights: 132174 exported verts, 0 zero-weight, influences 1-4
   (54% at 4), worst weight-sum deviation 0.0000.
-- rfcheck: clean. Godot: 1 skeleton, 160 bones, `BakeAnim` clip plays.
+- rfcheck: clean. Engine import: 1 skeleton, 160 bones, `BakeAnim` clip plays.
 - GLB 42MB (mesh + textures).
 
 ## Stalker (creature, 17-part blockout)
@@ -20,7 +20,7 @@ one-click game export -> rfcheck -> Godot 4.7.1 import.
 - Each part bound separately (no asset edits): 1360 vertex groups
   total. Weights: 13030 verts, 0 zero-weight, mostly 1-2 influences
   (expected: rigid parts), sums exact.
-- rfcheck: clean. Godot: 1 skeleton, 80 bones, `BakeAnim` clip plays.
+- rfcheck: clean. Engine import: 1 skeleton, 80 bones, `BakeAnim` clip plays.
 
 ## Tweak accounting (honest version)
 
@@ -40,7 +40,7 @@ inference + cleanup vs our fit-delta + generate + bind.
 
 ## Still pending
 
-- unirig half (granite-larissa running; stalker weights under
+- unirig half (worker machine running; stalker weights under
   diagnosis on their side).
 - Mixamo hero baseline (owner uploading `mixamo_hero.fbx`).
 - Final comparison table once all three land.

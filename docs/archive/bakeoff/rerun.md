@@ -19,13 +19,11 @@ the fit-delta closed and what zero-touch rigforge costs now.
 | rig | 706 bones / 160 DEF | 454 bones / 80 DEF |
 | bind | envelope transfer (direct heat: no solution), 494 gap-fills | envelope transfer, 0 gap-fills |
 | rfcheck | clean (160 joints, 1 mesh, max 4 infl/vert) | clean (80 joints, 1 mesh, max 4 infl/vert) |
-| Godot 4.7 import | 1 skeleton, 160 bones, 1 mesh | 1 skeleton, 80 bones, 1 mesh |
+| engine import (archived) | 1 skeleton, 160 bones, 1 mesh | 1 skeleton, 80 bones, 1 mesh |
 
 Artifacts (not committed): `/tmp/bakeoff_rerun/hero_rigged.glb`,
 `/tmp/bakeoff_rerun/stalker_rigged.glb`, `hero.log`, `stalker.log`
-(full fit/gate reports); `/tmp/bakeoff/godot/` holds the imported
-copies (`hero_rigged.glb`, `stalker_rigged.glb`). `/tmp` does not
-survive a reboot.
+(full fit/gate reports). `/tmp` does not survive a reboot.
 
 ## Verdict update
 
