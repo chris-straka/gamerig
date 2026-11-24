@@ -62,11 +62,11 @@ class WM_OT_rigforge_piece_transfer(bpy.types.Operator):
         if body is piece:
             self.report({"ERROR"}, "Source must differ from the piece")
             return {"CANCELLED"}
-        if not piece.data.vertices or not body.data.vertices:
-            self.report({"ERROR"}, "Source and piece meshes must contain vertices")
-            return {"CANCELLED"}
         if not body.vertex_groups:
             self.report({"ERROR"}, f"Source '{self.source}' has no weights")
+            return {"CANCELLED"}
+        if not piece.data.vertices or not body.data.vertices:
+            self.report({"ERROR"}, "Source and piece meshes must contain vertices")
             return {"CANCELLED"}
         try:
             assignment, report = _transfer.solve_transfer(

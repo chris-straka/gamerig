@@ -84,11 +84,11 @@ class WM_OT_rigforge_cleanup(bpy.types.Operator):
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
-        if not mesh.data.vertices:
-            self.report({"ERROR"}, f"'{mesh.name}' has no vertices")
-            return {"CANCELLED"}
         if not mesh.vertex_groups:
             self.report({"ERROR"}, f"'{mesh.name}' has no weights to clean")
+            return {"CANCELLED"}
+        if not mesh.data.vertices:
+            self.report({"ERROR"}, f"'{mesh.name}' has no vertices")
             return {"CANCELLED"}
         only = None
         if self.subset == "BONE_DEFORM":
